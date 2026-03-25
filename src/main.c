@@ -3,6 +3,7 @@
 #include <SDL3/SDL_main.h>
 #include <SDL3_ttf/SDL_ttf.h>
 
+#include <math.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <time.h>
@@ -139,7 +140,7 @@ static void calc_positions(struct app_state *as) {
 	float x1 = as->window_size.x / 9.1f;
 	float x2 = as->window_size.y / 3.6f * card_ratio;
 
-	as->game.card_size.x = min(x1, x2);
+	as->game.card_size.x = fminf(x1, x2);
 	as->game.card_size.y = as->game.card_size.x / card_ratio;
 	float margin = 0.2f * as->game.card_size.x;
 
@@ -239,9 +240,9 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
 }
 
 static void start_drag(struct game_state *gs, size_t i, SDL_FPoint *p) {
-	int n =
-	    min(floor((p->y - gs->column[i].position.y) / gs->column[i].margin),
-		gs->column[i].num_cards - 1);
+	int n = floorf((p->y - gs->column[i].position.y) / gs->column[i].margin);
+	if (n >= gs->column[i].num_cards)
+		n = gs->column[i].num_cards - 1;
 	if (gs->column[i].num_cards - n > gs->column[i].num_draggable_cards)
 		return;
 	gs->dragging.num_cards = gs->column[i].num_cards - n;

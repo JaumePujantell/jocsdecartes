@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 4.0)
+cmake_minimum_required(VERSION 3.31)
 
 project(cardgame C)
 
@@ -38,6 +38,7 @@ function(include_dependency libName gitURL gitTag)
         FetchContent_MakeAvailable(${libName})
 endfunction()
 
+set(SDL_X11_XSCRNSAVER OFF)
 include_dependency(SDL3 https://github.com/libsdl-org/SDL.git release-3.4.x)
 
 # SDL_image (used for loading various image formats)
@@ -65,6 +66,7 @@ add_custom_command(
 target_include_directories(${PROJECT_NAME} PUBLIC ${SDL3_INCLUDE_DIRS})
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
+	m # C math
         SDL3::SDL3
         # SDL3_image::SDL3_image
         SDL3_ttf::SDL3_ttf

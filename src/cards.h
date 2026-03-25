@@ -1,6 +1,8 @@
 #ifndef CARDS_H
 #define CARDS_H
 
+#include <stddef.h>
+
 typedef unsigned char card_t;
 
 #define ORS 0x10u
