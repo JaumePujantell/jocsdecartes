@@ -31,21 +31,21 @@ struct mouse_state {
 struct deck_data {
 	card_t cards[SPANISH_DECK_SIZE];
 	SDL_FPoint position;
-	size_t num_cards;
+	unsigned num_cards;
 	struct button draw_button;
 };
 
 struct column_data {
 	card_t cards[SPANISH_DECK_SIZE];
 	SDL_FPoint position;
-	size_t num_cards;
-	size_t num_draggable_cards;
+	unsigned num_cards;
+	unsigned num_draggable_cards;
 	float margin;
 };
 
 struct dragging_data {
 	card_t cards[12];
-	size_t num_cards;
+	unsigned num_cards;
 	int orig_column;
 };
 
@@ -100,7 +100,7 @@ static SDL_Texture *load_texture(SDL_Renderer *renderer, char *file_name) {
 }
 
 static void deal_cards(struct game_state *gs) {
-	for (size_t i = 0; i < 8 && gs->deck.num_cards > 0; ++i) {
+	for (unsigned i = 0; i < 8 && gs->deck.num_cards > 0; ++i) {
 		card_t *col_cards = gs->column[i].cards;
 		col_cards[gs->column[i].num_cards] =
 		    gs->deck.cards[gs->deck.num_cards - 1];
@@ -125,11 +125,11 @@ static void reset_game_state(struct game_state *gs) {
 	gs->deck.num_cards = SPANISH_DECK_SIZE;
 	shuffle(gs->deck.cards, SPANISH_DECK_SIZE);
 	float margin = 0.2f * gs->card_size.x;
-	for (size_t i = 0; i < 8; ++i) {
+	for (unsigned i = 0; i < 8; ++i) {
 		gs->column[i].num_cards = 0;
 		gs->column[i].margin = margin;
 	}
-	for (size_t i = 0; i < 4; ++i) {
+	for (unsigned i = 0; i < 4; ++i) {
 		gs->bank[i].top_card = 0;
 	}
 	gs->dragging.orig_column = -1;
@@ -200,7 +200,6 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
 	as->window = SDL_CreateWindow(app_name, 640, 480, SDL_WINDOW_RESIZABLE);
 	if (!as->window)
 		return SDL_APP_FAILURE;
-	// SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengl");
 	as->renderer = SDL_CreateRenderer(as->window, NULL);
 	if (!as->renderer)
 		return SDL_APP_FAILURE;
@@ -250,7 +249,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
 	return SDL_APP_CONTINUE;
 }
 
-static void start_drag(struct game_state *gs, size_t i, SDL_FPoint *p) {
+static void start_drag(struct game_state *gs, unsigned i, SDL_FPoint *p) {
 	int n = floorf((p->y - gs->column[i].position.y) / gs->column[i].margin);
 	if (n >= gs->column[i].num_cards)
 		n = gs->column[i].num_cards - 1;
@@ -258,7 +257,7 @@ static void start_drag(struct game_state *gs, size_t i, SDL_FPoint *p) {
 		return;
 	gs->dragging.num_cards = gs->column[i].num_cards - n;
 	gs->column[i].num_cards = n;
-	for (size_t j = 0; j < gs->dragging.num_cards; ++j) {
+	for (unsigned j = 0; j < gs->dragging.num_cards; ++j) {
 		gs->dragging.cards[j] = gs->column[i].cards[n + j];
 	}
 	gs->dragging.orig_column = i;
@@ -269,8 +268,8 @@ static void start_drag(struct game_state *gs, size_t i, SDL_FPoint *p) {
 		gs->column[i].num_draggable_cards = gs->column[i].num_cards;
 		return;
 	}
-	size_t nd = 1;
-	for (size_t j = gs->column[i].num_cards - 1; j > 0; --j) {
+	unsigned nd = 1;
+	for (unsigned j = gs->column[i].num_cards - 1; j > 0; --j) {
 		card_t a = gs->column[i].cards[j];
 		card_t b = gs->column[i].cards[j - 1];
 		if ((a & VAL_MASK) + 1 == (b & VAL_MASK) &&
@@ -288,7 +287,7 @@ static void end_drag(struct game_state *gs, SDL_FPoint *p) {
 	gs->dragging.orig_column = -1;
 	if (gs->dragging.num_cards == 1) {
 		card_t dc = gs->dragging.cards[0];
-		for (size_t i = 0; i < 4; ++i) {
+		for (unsigned i = 0; i < 4; ++i) {
 			card_t bc = gs->bank[i].top_card;
 			if ((bc == 0 && (dc & VAL_MASK) == 1) || bc + 1 == dc) {
 				r.x = gs->bank[i].position.x;
@@ -301,8 +300,8 @@ static void end_drag(struct game_state *gs, SDL_FPoint *p) {
 			}
 		}
 	}
-	for (size_t i = 0; i < 8; ++i) {
-		size_t n = gs->column[i].num_cards;
+	for (unsigned i = 0; i < 8; ++i) {
+		unsigned n = gs->column[i].num_cards;
 		if (n == 0)
 			n = 1;
 		r.x = gs->column[i].position.x;
@@ -323,8 +322,8 @@ static void end_drag(struct game_state *gs, SDL_FPoint *p) {
 			break;
 		}
 	}
-	size_t n = gs->column[dest].num_cards;
-	for (size_t i = 0; i < gs->dragging.num_cards; ++i) {
+	unsigned n = gs->column[dest].num_cards;
+	for (unsigned i = 0; i < gs->dragging.num_cards; ++i) {
 		gs->column[dest].cards[n + i] = gs->dragging.cards[i];
 	}
 	if (n == 0) {
@@ -358,7 +357,7 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
 				as->game.deck.draw_button.pressing = true;
 				break;
 			}
-			for (size_t i = 0; i < 8; ++i) {
+			for (unsigned i = 0; i < 8; ++i) {
 				if (as->game.column[i].num_cards == 0)
 					continue;
 				r.x = as->game.column[i].position.x;
@@ -451,9 +450,9 @@ static void draw_deck(const struct app_state *as,
 			     as->game.deck.draw_button.rect.y);
 }
 
-static void draw_column(const struct app_state *as, size_t i,
+static void draw_column(const struct app_state *as, unsigned i,
 			const struct mouse_state *mouse) {
-	const size_t n = as->game.column[i].num_cards;
+	const unsigned n = as->game.column[i].num_cards;
 	SDL_FRect dest_rect = {.x = as->game.column[i].position.x,
 			       .y = as->game.column[i].position.y,
 			       .w = as->game.card_size.x,
@@ -472,7 +471,7 @@ static void draw_column(const struct app_state *as, size_t i,
 	}
 	bool draw_extra = false;
 	SDL_FRect draw_extra_origin, draw_extra_dest;
-	for (size_t j = 0; j < n; ++j) {
+	for (unsigned j = 0; j < n; ++j) {
 		const card_t c = as->game.column[i].cards[j];
 		origin_rect.x = as->card_texture_size.x * ((c & VAL_MASK) - 1);
 		origin_rect.y = as->card_texture_size.y *
@@ -495,7 +494,7 @@ static void draw_column(const struct app_state *as, size_t i,
 	}
 }
 
-static void draw_bank(const struct app_state *as, size_t i) {
+static void draw_bank(const struct app_state *as, unsigned i) {
 	SDL_FRect dest_rect = {.x = as->game.bank[i].position.x,
 			       .y = as->game.bank[i].position.y,
 			       .w = as->game.card_size.x,
@@ -519,14 +518,14 @@ static void draw_floating(const struct app_state *as, float x, float y) {
 	if (as->game.dragging.orig_column == -1)
 		return;
 	float margin = 0.2f * as->game.card_size.x;
-	const size_t n = as->game.dragging.num_cards;
+	const unsigned n = as->game.dragging.num_cards;
 	SDL_FRect dest_rect = {.x = x,
 			       .y = y,
 			       .w = as->game.card_size.x,
 			       .h = as->game.card_size.y};
 	SDL_FRect origin_rect = {.w = as->card_texture_size.x,
 				 .h = as->card_texture_size.y};
-	for (size_t j = 0; j < n; ++j) {
+	for (unsigned j = 0; j < n; ++j) {
 		const card_t c = as->game.dragging.cards[j];
 		origin_rect.x = as->card_texture_size.x * ((c & VAL_MASK) - 1);
 		origin_rect.y = as->card_texture_size.y *
@@ -545,10 +544,10 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
 	mouse.flags = SDL_GetMouseState(&mouse.pos.x, &mouse.pos.y);
 	draw_background(as);
 	draw_deck(as, &mouse);
-	for (size_t i = 0; i < 8; ++i) {
+	for (unsigned i = 0; i < 8; ++i) {
 		draw_column(as, i, &mouse);
 	}
-	for (size_t i = 0; i < 4; ++i) {
+	for (unsigned i = 0; i < 4; ++i) {
 		draw_bank(as, i);
 	}
 	draw_floating(as, mouse.pos.x - as->game.card_size.x / 2.f,

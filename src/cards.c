@@ -2,7 +2,7 @@
 
 #include <stdlib.h>
 
-static void swap(card_t *set, size_t i, size_t j) {
+static void swap(card_t *set, unsigned i, unsigned j) {
 	if (j != i) {
 		card_t tmp = set[j];
 		set[j] = set[i];
@@ -10,16 +10,16 @@ static void swap(card_t *set, size_t i, size_t j) {
 	}
 }
 
-void shuffle(card_t *set, size_t n) {
-	size_t i;
+void shuffle(card_t *set, unsigned n) {
+	unsigned i;
 	for (i = 1; i < n; ++i) {
-		size_t j = rand() / (RAND_MAX / i + 1);
+		unsigned j = rand() / (RAND_MAX / i + 1);
 		swap(set, i, j);
 	}
 }
 
-static size_t higest_index(card_t *set, size_t size) {
-	size_t i, res = 0;
+static unsigned higest_index(card_t *set, unsigned size) {
+	unsigned i, res = 0;
 	for (i = 1; i < size; ++i) {
 		if (set[i] > set[res]) {
 			res = i;
@@ -28,10 +28,10 @@ static size_t higest_index(card_t *set, size_t size) {
 	return res;
 }
 
-void sort(card_t *set, size_t n) {
-	size_t i;
+void sort(card_t *set, unsigned n) {
+	unsigned i;
 	for (i = 0; i < n; ++i) {
-		size_t j = higest_index(set, n - i);
+		unsigned j = higest_index(set, n - i);
 		swap(set, n - i - 1, j);
 	}
 }
