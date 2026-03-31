@@ -65,8 +65,12 @@ add_custom_command(
 
 target_include_directories(${PROJECT_NAME} PUBLIC ${SDL3_INCLUDE_DIRS})
 
+find_library(C_MATH_LIBRARY m)
+if(C_MATH_LIBRARY)
+    target_link_libraries(${PROJECT_NAME} PUBLIC ${C_MATH_LIBRARY})
+endif()
+
 target_link_libraries(${PROJECT_NAME} PRIVATE
-	m # C math
         SDL3::SDL3
         # SDL3_image::SDL3_image
         SDL3_ttf::SDL3_ttf

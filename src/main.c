@@ -69,6 +69,7 @@ struct app_state {
 	SDL_Texture *deck_texture;
 	TTF_TextEngine *text_engine;
 	TTF_Font *font;
+	float font_size;
 	SDL_Point window_size;
 	SDL_FPoint card_texture_size;
 	struct game_state game;
@@ -147,6 +148,20 @@ static void calc_positions(struct app_state *as) {
 	float left = (as->window_size.x - as->game.card_size.x * 8.7f) / 2.f;
 	float top = margin * 2.f;
 
+	int w, h, old_w = 0;
+	TTF_GetTextSize(as->game.deck.draw_button.text, &w, &h);
+	const float objective = as->game.card_size.x / 2.f;
+	while (w < objective - 1 || w > objective + 1) {
+		as->font_size += (objective / w - 1) * as->font_size;
+		TTF_SetFontSize(as->font, as->font_size);
+		TTF_GetTextSize(as->game.deck.draw_button.text, &w, &h);
+		if (w == old_w)
+			break;
+		old_w = w;
+	}
+	as->game.deck.draw_button.rect.w = w + 4;
+	as->game.deck.draw_button.rect.h = h;
+
 	as->game.deck.position.x = left;
 	as->game.deck.position.y = top;
 	as->game.deck.draw_button.rect.x =
@@ -205,7 +220,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
 	char *font_path = NULL;
 	if (!get_path_to_resource(&font_path, "fonts", "OpenSans-Regular.ttf"))
 		return SDL_APP_FAILURE;
-	as->font = TTF_OpenFont(font_path, 14);
+	as->font_size = 14.f;
+	as->font = TTF_OpenFont(font_path, as->font_size);
 	SDL_free(font_path);
 	if (!as->font)
 		return SDL_APP_FAILURE;
@@ -225,11 +241,6 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
 
 	as->card_texture_size.x /= 12;
 	as->card_texture_size.y /= 5;
-
-	int w, h;
-	TTF_GetTextSize(as->game.deck.draw_button.text, &w, &h);
-	as->game.deck.draw_button.rect.w = w + 4;
-	as->game.deck.draw_button.rect.h = h;
 
 	reset_game_state(&as->game);
 
