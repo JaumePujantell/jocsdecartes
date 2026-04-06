@@ -79,8 +79,12 @@ const char *app_name = "Card Game";
 
 static bool get_path_to_resource(char **path, const char *kind,
 				 const char *name) {
+#ifdef __ANDROID__
+	SDL_asprintf(path, "%s" OS_PATH_SEPARATOR "%s", kind, name);
+#else
 	SDL_asprintf(path, "%s%s" OS_PATH_SEPARATOR "%s", SDL_GetBasePath(),
 		     kind, name);
+#endif
 	return *path != NULL;
 }
 

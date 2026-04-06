@@ -1,13 +1,23 @@
-cmake_minimum_required(VERSION 3.31)
+cmake_minimum_required(VERSION 3.28)
 
 project(cardgame C)
 
-add_executable(generate_deck "tools/generate_deck.c")
-target_include_directories(generate_deck PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+if (ANDROID)
+        # so much for system independence...
+        add_custom_command(
+                OUTPUT generate_deck
+                COMMAND gcc ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_deck.c -I ${CMAKE_CURRENT_SOURCE_DIR}/src -o generate_deck
+                DEPENDS tools/generate_deck.c
+                VERBATIM
+        )
+else ()
+        add_executable(generate_deck "tools/generate_deck.c")
+        target_include_directories(generate_deck PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+endif()
 
 add_custom_command(
   OUTPUT deck.c
-  COMMAND generate_deck > deck.c
+  COMMAND ./generate_deck > deck.c
   DEPENDS generate_deck
   VERBATIM
 )
@@ -32,7 +42,6 @@ function(include_dependency libName gitURL gitTag)
                 GIT_TAG        ${gitTag}
                 GIT_SHALLOW    TRUE
                 GIT_PROGRESS   TRUE
-                EXCLUDE_FROM_ALL
                 FIND_PACKAGE_ARGS
         )
         FetchContent_MakeAvailable(${libName})
@@ -54,23 +63,31 @@ include_dependency(SDL3 https://github.com/libsdl-org/SDL.git release-3.4.x)
 include_dependency(SDL3_ttf https://github.com/libsdl-org/SDL_ttf.git release-3.2.x)
 
 set(CSourceFiles "src/main.c" "src/cards.c")
-add_executable(${PROJECT_NAME} ${CSourceFiles} deck.c)
-target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+
+set(TARGET_NAME ${PROJECT_NAME})
+if (ANDROID)
+        add_library(main SHARED ${CSourceFiles} deck.c)
+        set(TARGET_NAME main)
+else()
+        add_executable(${TARGET_NAME} ${CSourceFiles} deck.c)
+endif()
+
+target_include_directories(${TARGET_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
 add_custom_command(
-        TARGET ${PROJECT_NAME} POST_BUILD
+        TARGET ${TARGET_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different ${CMAKE_SOURCE_DIR}/resources ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}
         VERBATIM
 )
 
-target_include_directories(${PROJECT_NAME} PUBLIC ${SDL3_INCLUDE_DIRS})
+target_include_directories(${TARGET_NAME} PUBLIC ${SDL3_INCLUDE_DIRS})
 
 find_library(C_MATH_LIBRARY m)
 if(C_MATH_LIBRARY)
-    target_link_libraries(${PROJECT_NAME} PUBLIC ${C_MATH_LIBRARY})
+    target_link_libraries(${TARGET_NAME} PUBLIC ${C_MATH_LIBRARY})
 endif()
 
-target_link_libraries(${PROJECT_NAME} PRIVATE
+target_link_libraries(${TARGET_NAME} PRIVATE
         SDL3::SDL3
         # SDL3_image::SDL3_image
         SDL3_ttf::SDL3_ttf
