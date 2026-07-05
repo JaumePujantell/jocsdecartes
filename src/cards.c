@@ -36,6 +36,7 @@ void sort(card_t *set, unsigned n) {
 	}
 }
 
+/* 0: equal, 1: same lenght, -1: alternate length */
 int compare_suit(card_t a, card_t b) {
 	a = a & SUIT_MASK;
 	if (a == b)

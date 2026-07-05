@@ -1,16 +1,12 @@
-default: build
-
-# Build for Linux (native)
-build:
+build-linux:
     cmake --preset default
     cmake --build --preset default
 
-# Build for Windows using MinGW cross-compiler
-build-windows:
-    cmake -B build-windows \
-        -DCMAKE_TOOLCHAIN_FILE=/usr/share/mingw/toolchain-x86_64-w64-mingw32.cmake \
-        -DCMAKE_BUILD_TYPE=Release
-    cmake --build build-windows --parallel
+run-linux: build-linux
+    ./build/cardgame
+
+alias build := build-linux
+alias run := run-linux
 
 # Build for Android (debug APK)
 build-android:
