@@ -216,6 +216,9 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
 	*appstate = as;
 	SDL_memset(as, 0, sizeof(*as));
 
+	/* Only affects Android/iOS. */
+	SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+
 	if (!SDL_Init(SDL_INIT_VIDEO) || !TTF_Init())
 		return SDL_APP_FAILURE;
 
