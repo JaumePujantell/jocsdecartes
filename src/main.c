@@ -45,6 +45,14 @@ struct column_data {
 	unsigned num_receiving;
 };
 
+struct delayed_dragging_data {
+	Uint64 delay_started;
+	unsigned i;
+	SDL_FPoint pointer;
+};
+#define DRAG_START_DELAY_MS 150
+#define DRAG_START_MOTION_THRESHOLD 4.f
+
 struct dragging_data {
 	card_t cards[SPANISH_DECK_SIZE / 4];
 	SDL_FPoint position;
@@ -65,6 +73,7 @@ struct game_state {
 	struct column_data column[8];
 	struct bank_data bank[4];
 	struct dragging_data dragging;
+	struct delayed_dragging_data delayed_dragging;
 	SDL_FPoint card_size;
 };
 
@@ -264,24 +273,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
 	return SDL_APP_CONTINUE;
 }
 
-static void start_drag(struct game_state *gs, unsigned i, SDL_FPoint *p) {
-	struct column_data *column = &gs->column[i];
-	struct dragging_data *dragging = &gs->dragging;
-	int n = floorf((p->y - column->position.y) / column->margin);
-	if (n >= column->num_cards)
-		n = column->num_cards - 1;
-	if (column->num_cards - n > column->num_draggable_cards)
-		return;
-	dragging->num_cards = column->num_cards - n;
-	dragging->position.x = column->position.x;
-	dragging->position.y = column->position.y + n * column->margin;
-	dragging->animate_to_pointer = true;
-	column->num_cards = n;
-	for (unsigned j = 0; j < dragging->num_cards; ++j) {
-		dragging->cards[j] = column->cards[n + j];
-	}
-	dragging->orig_column = i;
-	column->num_draggable_cards -= dragging->num_cards;
+static void update_num_draggable_cards(struct column_data *column) {
 	if (column->num_draggable_cards != 0)
 		return;
 	if (column->num_cards < 2) {
@@ -301,6 +293,71 @@ static void start_drag(struct game_state *gs, unsigned i, SDL_FPoint *p) {
 	column->num_draggable_cards = nd;
 }
 
+static bool card_fits_on_bank(card_t bank_top, card_t card) {
+	return (bank_top == 0 && (card & VAL_MASK) == 1) ||
+	       bank_top + 1 == card;
+}
+
+static void start_drag(struct game_state *gs, unsigned i, const SDL_FPoint *p) {
+	if (gs->delayed_dragging.delay_started)
+		gs->delayed_dragging.delay_started = 0;
+	struct column_data *column = &gs->column[i];
+	struct dragging_data *dragging = &gs->dragging;
+	int n = floorf((p->y - column->position.y) / column->margin);
+	if (n >= column->num_cards)
+		n = column->num_cards - 1;
+	if (column->num_cards - n > column->num_draggable_cards)
+		return;
+	dragging->num_cards = column->num_cards - n;
+	dragging->position.x = column->position.x;
+	dragging->position.y = column->position.y + n * column->margin;
+	dragging->animate_to_pointer = true;
+	column->num_cards = n;
+	for (unsigned j = 0; j < dragging->num_cards; ++j) {
+		dragging->cards[j] = column->cards[n + j];
+	}
+	dragging->orig_column = i;
+	column->num_draggable_cards -= dragging->num_cards;
+	update_num_draggable_cards(column);
+}
+
+static void start_drag_delayed(struct game_state *gs, unsigned i,
+			       const SDL_FPoint *p) {
+	gs->delayed_dragging.delay_started = SDL_GetTicks();
+	gs->delayed_dragging.i = i;
+	gs->delayed_dragging.pointer = *p;
+}
+
+static bool is_bottom_card_click(const struct column_data *column,
+				 const SDL_FPoint *p) {
+	unsigned n = floorf((p->y - column->position.y) / column->margin);
+	return n >= column->num_cards - 1;
+}
+
+static bool try_move_bottom_card_to_bank(struct game_state *gs, unsigned i) {
+	struct column_data *column = &gs->column[i];
+	if (column->num_cards == 0)
+		return false;
+	card_t dc = column->cards[column->num_cards - 1];
+	for (unsigned b = 0; b < 4; ++b) {
+		if (!card_fits_on_bank(gs->bank[b].top_card, dc))
+			continue;
+		gs->bank[b].top_card_receiving = dc;
+		gs->bank[b].position_receiving.x = column->position.x;
+		gs->bank[b].position_receiving.y =
+		    column->position.y +
+		    (column->num_cards - 1) * column->margin;
+		--column->num_cards;
+		if (column->num_receiving > 0)
+			--column->num_receiving;
+		if (column->num_draggable_cards > 0)
+			--column->num_draggable_cards;
+		update_num_draggable_cards(column);
+		return true;
+	}
+	return false;
+}
+
 static void end_drag(struct game_state *gs, SDL_FPoint *p) {
 	SDL_FRect r = {.w = gs->card_size.x};
 	int dest = gs->dragging.orig_column;
@@ -313,13 +370,12 @@ static void end_drag(struct game_state *gs, SDL_FPoint *p) {
 		drop_position.x = p->x - gs->card_size.x / 2.f;
 		drop_position.y = p->y - margin / 2.f;
 	}
-	gs->dragging.orig_column = -1;
 	gs->dragging.num_cards = 0;
 	if (num_cards == 1) {
 		card_t dc = gs->dragging.cards[0];
 		for (unsigned i = 0; i < 4; ++i) {
 			card_t bc = gs->bank[i].top_card;
-			if ((bc == 0 && (dc & VAL_MASK) == 1) || bc + 1 == dc) {
+			if (card_fits_on_bank(bc, dc)) {
 				r.x = gs->bank[i].position.x;
 				r.y = gs->bank[i].position.y;
 				r.h = gs->card_size.y;
@@ -398,14 +454,42 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
 				      (as->game.column[i].num_cards - 1) *
 					  as->game.column[i].margin;
 				if (SDL_PointInRectFloat(&p, &r)) {
-					start_drag(&as->game, i, &p);
+					if (is_bottom_card_click(
+						&as->game.column[i], &p)) {
+						if (event->button.clicks == 1)
+							start_drag_delayed(
+							    &as->game, i, &p);
+						else if (
+						    !try_move_bottom_card_to_bank(
+							&as->game, i))
+							start_drag(&as->game, i,
+								   &p);
+
+					} else {
+						start_drag(&as->game, i, &p);
+					}
 					break;
 				}
 			}
 		}
 		break;
+	case SDL_EVENT_MOUSE_MOTION:
+		if (as->game.delayed_dragging.delay_started) {
+			p.x = event->motion.x;
+			p.y = event->motion.y;
+			float dist =
+			    hypot(p.x - as->game.delayed_dragging.pointer.x,
+				  p.y - as->game.delayed_dragging.pointer.y);
+			if (dist > DRAG_START_MOTION_THRESHOLD)
+				start_drag(&as->game,
+					   as->game.delayed_dragging.i,
+					   &as->game.delayed_dragging.pointer);
+		}
+		break;
 	case SDL_EVENT_MOUSE_BUTTON_UP:
 		if (event->button.button == SDL_BUTTON_LEFT) {
+			if (as->game.delayed_dragging.delay_started)
+				as->game.delayed_dragging.delay_started = 0;
 			p.x = event->button.x;
 			p.y = event->button.y;
 			if (as->game.deck.draw_button.pressing) {
@@ -416,7 +500,7 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
 				as->game.deck.draw_button.pressing = false;
 				break;
 			}
-			if (as->game.dragging.orig_column != -1)
+			if (as->game.dragging.num_cards != 0)
 				end_drag(&as->game, &p);
 		}
 		break;
@@ -464,7 +548,7 @@ static void draw_deck(const struct app_state *as,
 			  &dest_rect);
 	if (as->game.deck.num_cards == 0) {
 		SDL_SetRenderDrawColor(as->renderer, 100, 100, 100, 200);
-	} else if (as->game.dragging.orig_column == -1 &&
+	} else if (as->game.dragging.num_cards == 0 &&
 		   SDL_PointInRectFloat(&mouse->pos,
 					&as->game.deck.draw_button.rect)) {
 		if (as->game.deck.draw_button.pressing)
@@ -678,6 +762,10 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
 	const float card_ratio =
 	    as->card_texture_size.y / as->card_texture_size.x;
 	const Uint64 now = SDL_GetTicks();
+	if (as->game.delayed_dragging.delay_started &&
+	    now - as->game.delayed_dragging.delay_started > DRAG_START_DELAY_MS)
+		start_drag(&as->game, as->game.delayed_dragging.i,
+			   &as->game.delayed_dragging.pointer);
 	const float dt = (now - as->last_frame_ticks) / 1000.f;
 	as->last_frame_ticks = now;
 	mouse.flags = SDL_GetMouseState(&mouse.pos.x, &mouse.pos.y);
