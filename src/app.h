@@ -1,0 +1,27 @@
+#ifndef APP_H
+#define APP_H
+
+#include <SDL3/SDL.h>
+
+enum game_id { NO_GAME = -1, SOLITARI = 0 };
+
+struct app_state {
+	SDL_Window *window;
+	SDL_Renderer *renderer;
+	SDL_Texture *table_texture;
+	SDL_Texture *deck_texture;
+	SDL_Point window_size;
+	SDL_FPoint card_texture_size;
+	Uint64 last_frame_ticks;
+	Uint64 current_frame_ticks;
+	enum game_id current_game;
+	struct gui_state *gui;
+	struct main_screen_state *main_screen;
+	struct solitari_state *solitari;
+};
+
+bool get_path_to_resource(char **path, const char *kind, const char *name);
+void restart_current_game(struct app_state *as);
+void select_game(struct app_state *as, enum game_id id);
+
+#endif // !APP_H

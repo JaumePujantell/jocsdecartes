@@ -10,7 +10,7 @@ The [card images](https://commons.wikimedia.org/wiki/File:Baraja_espa%C3%B1ola_c
 
 The [Open Sans](https://fonts.google.com/specimen/Open+Sans) font is copyright 2010-2011 Google Corporation, digitized by Ascender Corporation, licensed under the [Apache License, Version 2.0](http://www.apache.org/licenses/LICENSE-2.0).
 
-This project uses [SDL3](https://www.libsdl.org) and [SDL3_ttf](https://github.com/libsdl-org/SDL_ttf), copyright (C) 1997-2026 Sam Lantinga, both licensed under the [zlib license](https://www.libsdl.org/license.php).
+This project uses [SDL3](https://www.libsdl.org), [SDL3_ttf](https://github.com/libsdl-org/SDL_ttf) and [SDL3_image](https://github.com/libsdl-org/SDL_image), copyright (C) 1997-2026 Sam Lantinga, all licensed under the [zlib license](https://www.libsdl.org/license.php).
 
 The Android project under `android-project/` is based on the android-project template that ships with SDL3. The following files come from that template:
 

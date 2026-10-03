@@ -50,19 +50,20 @@ endfunction()
 set(SDL_X11_XSCRNSAVER OFF)
 include_dependency(SDL3 https://github.com/libsdl-org/SDL.git release-3.4.x)
 
-# SDL_image (used for loading various image formats)
-# set(SDLIMAGE_VENDORED ON)
-# set(SDLIMAGE_AVIF OFF)	# disable formats we don't use to make the build faster and smaller.
-# set(SDLIMAGE_BMP OFF)
-# set(SDLIMAGE_JPEG OFF)
-# set(SDLIMAGE_WEBP OFF)
-# set(SDLIMAGE_TIFF OFF)
-# set(SDLIMAGE_PNG_LIBPNG OFF)    # SDL3 includes built-in support for loading PNGs. If you need more than what that supports, enable this option.
-# include_dependency(SDL3_image https://github.com/libsdl-org/SDL_image.git release-3.4.x)
-
 include_dependency(SDL3_ttf https://github.com/libsdl-org/SDL_ttf.git release-3.2.x)
 
-set(CSourceFiles "src/main.c" "src/cards.c")
+foreach(format ANI AVIF BMP GIF JPG JXL LBM PCX PNG PNM QOI TGA TIF WEBP XCF XPM XV)
+        set(SDLIMAGE_${format} OFF)
+endforeach()
+set(SDLIMAGE_BACKEND_STB OFF)
+set(SDLIMAGE_BACKEND_WIC OFF)
+set(SDLIMAGE_BACKEND_IMAGEIO OFF)
+set(SDLIMAGE_SVG ON)
+set(SDLIMAGE_SAMPLES OFF)
+set(SDLIMAGE_INSTALL OFF)
+include_dependency(SDL3_image https://github.com/libsdl-org/SDL_image.git release-3.4.x)
+
+set(CSourceFiles "src/app.c" "src/gui.c" "src/cards.c" "src/solitari.c")
 
 set(TARGET_NAME ${PROJECT_NAME})
 if (ANDROID)
@@ -89,6 +90,6 @@ endif()
 
 target_link_libraries(${TARGET_NAME} PRIVATE
         SDL3::SDL3
-        # SDL3_image::SDL3_image
         SDL3_ttf::SDL3_ttf
+        SDL3_image::SDL3_image
 )

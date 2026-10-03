@@ -1,6 +1,9 @@
+.*
+!.gitignore
+!.clang-format
+
 build/*
-downloaded/*
-.vs/*
+
 android-project/local.properties
 android-project/build/*
 android-project/.gradle/*
