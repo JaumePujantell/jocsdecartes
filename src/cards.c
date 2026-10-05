@@ -1,6 +1,6 @@
 #include "cards.h"
 
-#include <stdlib.h>
+#include <SDL3/SDL_stdinc.h>
 
 // Aproximation of C23 unreachable
 #ifdef _MSC_VER // MSVC
@@ -17,24 +17,16 @@ static void swap(card_t *set, unsigned i, unsigned j) {
 	}
 }
 
-static unsigned random_below(unsigned n) {
-	unsigned bucket = ((unsigned)RAND_MAX + 1u) / n;
-	unsigned r;
-	do {
-		r = (unsigned)rand() / bucket;
-	} while (r >= n);
-	return r;
-}
-
 void shuffle(card_t *set, unsigned n) {
 	unsigned i;
 	for (i = n; i > 1; --i) {
-		swap(set, i - 1, random_below(i));
+		swap(set, i - 1, (unsigned)SDL_rand((Sint32)i));
 	}
 }
 
-static unsigned higest_index(card_t *set, unsigned size) {
-	unsigned i, res = 0;
+static unsigned higest_index(const card_t *set, unsigned size) {
+	unsigned i;
+	unsigned res = 0;
 	for (i = 1; i < size; ++i) {
 		if (set[i] > set[res]) {
 			res = i;
@@ -54,19 +46,23 @@ void sort(card_t *set, unsigned n) {
 int compare_suit(card_t a, card_t b) {
 	a = a & SUIT_MASK;
 	b = b & SUIT_MASK;
-	if (a == b)
+	if (a == b) {
 		return 0;
+	}
 	switch (a) {
 	case ORS:
 	case COPES:
-		if (b < ESPASES)
+		if (b < ESPASES) {
 			return 1;
+		}
 		return -1;
 	case ESPASES:
 	case BASTOS:
-		if (b < ESPASES)
+		if (b < ESPASES) {
 			return -1;
+		}
 		return 1;
+	default:
+		unreachable();
 	}
-	unreachable();
 }

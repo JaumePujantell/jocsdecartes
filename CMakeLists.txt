@@ -4,21 +4,26 @@ project(cardgame C)
 
 if (ANDROID)
         # so much for system independence...
+        find_program(HOST_C_COMPILER NAMES cc gcc clang REQUIRED)
+        set(GENERATE_DECK_COMMAND "${CMAKE_CURRENT_BINARY_DIR}/generate_deck")
         add_custom_command(
-                OUTPUT generate_deck
-                COMMAND gcc ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_deck.c -I ${CMAKE_CURRENT_SOURCE_DIR}/src -o generate_deck
-                DEPENDS tools/generate_deck.c
+                OUTPUT ${GENERATE_DECK_COMMAND}
+                COMMAND ${HOST_C_COMPILER} ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_deck.c -I ${CMAKE_CURRENT_SOURCE_DIR}/src -o ${GENERATE_DECK_COMMAND}
+                DEPENDS tools/generate_deck.c src/cards.h
                 VERBATIM
         )
+        set(GENERATE_DECK_DEPENDS ${GENERATE_DECK_COMMAND})
 else ()
         add_executable(generate_deck "tools/generate_deck.c")
         target_include_directories(generate_deck PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+        set(GENERATE_DECK_COMMAND $<TARGET_FILE:generate_deck>)
+        set(GENERATE_DECK_DEPENDS generate_deck)
 endif()
 
 add_custom_command(
   OUTPUT deck.c
-  COMMAND ./generate_deck > deck.c
-  DEPENDS generate_deck
+  COMMAND ${GENERATE_DECK_COMMAND} > deck.c
+  DEPENDS ${GENERATE_DECK_DEPENDS}
   VERBATIM
 )
 
@@ -35,33 +40,32 @@ set(
 include(FetchContent)
 set(FETCHCONTENT_TRY_FIND_PACKAGE_MODE ALWAYS)
 
-# define a function for adding git dependencies
-function(include_dependency libName gitURL gitTag)
+function(include_dependency libName gitURL gitTag minVersion)
         FetchContent_Declare(${libName}
                 GIT_REPOSITORY ${gitURL}
                 GIT_TAG        ${gitTag}
                 GIT_SHALLOW    TRUE
                 GIT_PROGRESS   TRUE
-                FIND_PACKAGE_ARGS
+                FIND_PACKAGE_ARGS ${minVersion}
         )
         FetchContent_MakeAvailable(${libName})
 endfunction()
 
 set(SDL_X11_XSCRNSAVER OFF)
-include_dependency(SDL3 https://github.com/libsdl-org/SDL.git release-3.4.x)
+include_dependency(SDL3 https://github.com/libsdl-org/SDL.git release-3.4.18 3.4.0)
 
-include_dependency(SDL3_ttf https://github.com/libsdl-org/SDL_ttf.git release-3.2.x)
+include_dependency(SDL3_ttf https://github.com/libsdl-org/SDL_ttf.git release-3.2.2 3.2.0)
 
+set(SDLIMAGE_SVG ON)
 foreach(format ANI AVIF BMP GIF JPG JXL LBM PCX PNG PNM QOI TGA TIF WEBP XCF XPM XV)
         set(SDLIMAGE_${format} OFF)
 endforeach()
 set(SDLIMAGE_BACKEND_STB OFF)
 set(SDLIMAGE_BACKEND_WIC OFF)
 set(SDLIMAGE_BACKEND_IMAGEIO OFF)
-set(SDLIMAGE_SVG ON)
 set(SDLIMAGE_SAMPLES OFF)
 set(SDLIMAGE_INSTALL OFF)
-include_dependency(SDL3_image https://github.com/libsdl-org/SDL_image.git release-3.4.x)
+include_dependency(SDL3_image https://github.com/libsdl-org/SDL_image.git release-3.4.8 3.4.0)
 
 set(CSourceFiles "src/app.c" "src/gui.c" "src/cards.c" "src/solitari.c")
 
@@ -80,8 +84,6 @@ add_custom_command(
         COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different ${CMAKE_SOURCE_DIR}/resources ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}
         VERBATIM
 )
-
-target_include_directories(${TARGET_NAME} PUBLIC ${SDL3_INCLUDE_DIRS})
 
 find_library(C_MATH_LIBRARY m)
 if(C_MATH_LIBRARY)

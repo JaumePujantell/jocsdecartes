@@ -1,7 +1,10 @@
 #ifndef APP_H
 #define APP_H
 
-#include <SDL3/SDL.h>
+#include <SDL3/SDL_rect.h>
+#include <SDL3/SDL_render.h>
+#include <SDL3/SDL_stdinc.h>
+#include <SDL3/SDL_video.h>
 
 enum game_id { NO_GAME = -1, SOLITARI = 0 };
 

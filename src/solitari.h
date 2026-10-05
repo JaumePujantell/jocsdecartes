@@ -1,11 +1,11 @@
 #ifndef SOLITARI_H
 #define SOLITARI_H
 
-#include <SDL3/SDL.h>
+#include <SDL3/SDL_events.h>
+
 #include <stdbool.h>
 
 #include "app.h"
-#include "gui.h"
 
 struct solitari_state;
 

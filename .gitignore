@@ -1,6 +1,7 @@
 .*
 !.gitignore
 !.clang-format
+!.clang-tidy
 
 build/*
 

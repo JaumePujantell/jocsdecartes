@@ -1,15 +1,32 @@
 #define SDL_MAIN_USE_CALLBACKS 1 /* use the callbacks instead of main() */
-#include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
+
+#include "app.h"
+
+#include <SDL3/SDL_blendmode.h>
+#include <SDL3/SDL_error.h>
+#include <SDL3/SDL_events.h>
+#include <SDL3/SDL_filesystem.h>
+#include <SDL3/SDL_hints.h>
+#include <SDL3/SDL_init.h>
+#include <SDL3/SDL_log.h>
+#include <SDL3/SDL_pixels.h>
+#include <SDL3/SDL_rect.h>
+#include <SDL3/SDL_render.h>
+#include <SDL3/SDL_stdinc.h>
+#include <SDL3/SDL_surface.h>
+#include <SDL3/SDL_timer.h>
+#include <SDL3/SDL_video.h>
 #include <SDL3_ttf/SDL_ttf.h>
 
 #include <stdbool.h>
-#include <stdlib.h>
-#include <time.h>
 
-#include "app.h"
+#include "cards.h"
 #include "gui.h"
 #include "solitari.h"
+
+#define DECK_TEXTURE_COLUMNS NUM_SUIT_CARDS
+#define DECK_TEXTURE_ROWS (NUM_SUITS + 1)
 
 #if (defined(WIN32) || defined(_WIN32) || defined(__WIN32)) &&                 \
     !defined(__CYGWIN__)
@@ -18,9 +35,18 @@
 #define OS_PATH_SEPARATOR "/"
 #endif
 
-static const char *app_name = "Card Game";
-static const char *game_names[] = {"Solitari"};
+static const char *app_name = "Jocs de Cartes";
+static const char *game_names[] = {"El Solitari"};
 #define NUM_GAMES (sizeof(game_names) / sizeof(char *))
+
+#define WINDOW_WIDTH 640
+#define WINDOW_HEIGHT 480
+#define MIN_WINDOW_WIDTH 320
+#define MIN_WINDOW_HEIGHT 240
+#define GAME_BUTTON_WIDTH 200.F
+#define GAME_BUTTON_SPACING 10.F
+
+static const SDL_Color background_color = {255, 255, 255, SDL_ALPHA_OPAQUE};
 
 struct main_screen_state {
 	struct button *game_buttons[NUM_GAMES];
@@ -32,19 +58,22 @@ bool get_path_to_resource(char **path, const char *kind, const char *name) {
 	SDL_asprintf(path, "%s" OS_PATH_SEPARATOR "%s", kind, name);
 #else
 	const char *base_path = SDL_GetBasePath();
-	if (!base_path)
+	if (!base_path) {
 		return false;
+	}
 	SDL_asprintf(path, "%s%s" OS_PATH_SEPARATOR "%s", base_path, kind,
 		     name);
 #endif
 	return *path != NULL;
 }
 
-/* Load to card_texture a png, without using image lib */
-static SDL_Texture *load_texture(SDL_Renderer *renderer, char *file_name) {
+/* Load a png to an SDL_Texture, without using image lib */
+static SDL_Texture *load_texture(SDL_Renderer *renderer,
+				 const char *file_name) {
 	char *png_path = NULL;
-	if (!get_path_to_resource(&png_path, "textures", file_name))
+	if (!get_path_to_resource(&png_path, "textures", file_name)) {
 		return NULL;
+	}
 	SDL_Surface *surface = SDL_LoadPNG(png_path);
 	SDL_free(png_path);
 	if (!surface) {
@@ -55,19 +84,29 @@ static SDL_Texture *load_texture(SDL_Renderer *renderer, char *file_name) {
 	return texture;
 }
 
-static void position_game_buttons(struct app_state *as) {
-	float spacing = 10.f;
-	float total_height = -spacing;
-	struct main_screen_state *ms = as->main_screen;
-	for (unsigned i = 0; i < NUM_GAMES; ++i)
-		total_height += button_size(ms->game_buttons[i]).y + spacing;
+static void update_render_scale(struct app_state *as) {
+	float density = SDL_GetWindowPixelDensity(as->window);
+	if (density <= 0.F) {
+		density = 1.F;
+	}
+	SDL_SetRenderScale(as->renderer, density, density);
+}
 
-	float y = (as->window_size.y - total_height) / 2.f;
+static void position_game_buttons(struct app_state *as) {
+	float total_height = -GAME_BUTTON_SPACING;
+	struct main_screen_state *ms = as->main_screen;
 	for (unsigned i = 0; i < NUM_GAMES; ++i) {
-		SDL_FPoint size = button_size(ms->game_buttons[i]);
+		total_height += button_get_size(ms->game_buttons[i]).y +
+				GAME_BUTTON_SPACING;
+	}
+
+	float y = ((float)as->window_size.y - total_height) / 2.F;
+	for (unsigned i = 0; i < NUM_GAMES; ++i) {
+		SDL_FPoint size = button_get_size(ms->game_buttons[i]);
 		button_set_position(ms->game_buttons[i],
-				    (as->window_size.x - size.x) / 2.f, y);
-		y += size.y + spacing;
+				    ((float)as->window_size.x - size.x) / 2.F,
+				    y);
+		y += size.y + GAME_BUTTON_SPACING;
 	}
 }
 
@@ -84,11 +123,10 @@ void select_game(struct app_state *as, enum game_id id) {
 				return;
 			}
 		} else {
-			/* The window may have been resized while the game was
-			 * not shown. */
 			solitari_resize(as);
 			solitari_restart(as->solitari);
 		}
+		break;
 	};
 	as->current_game = id;
 }
@@ -99,13 +137,14 @@ void restart_current_game(struct app_state *as) {
 		break;
 	case SOLITARI:
 		solitari_restart(as->solitari);
+		break;
 	};
 }
 
-struct game_button_context {
+static struct game_button_context {
 	struct app_state *as;
 	enum game_id id;
-} button_contexts[NUM_GAMES] = {{NULL, SOLITARI}};
+} button_contexts[NUM_GAMES];
 
 static void select_game_callback(void *userdata) {
 	struct game_button_context *ctx =
@@ -114,12 +153,14 @@ static void select_game_callback(void *userdata) {
 }
 
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
-	srand(time(NULL));
-	SDL_SetAppMetadata(app_name, "0.1", NULL);
+	(void)argc;
+	(void)argv;
+	SDL_SetAppMetadata(app_name, "0.3", NULL);
 
 	struct app_state *as = SDL_malloc(sizeof(*as));
-	if (!as)
+	if (!as) {
 		return SDL_APP_FAILURE;
+	}
 	*appstate = as;
 	SDL_memset(as, 0, sizeof(*as));
 	as->current_game = NO_GAME;
@@ -127,53 +168,64 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
 	/* Only affects Android/iOS. */
 	SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
 
-	if (!SDL_Init(SDL_INIT_VIDEO) || !TTF_Init())
+	if (!SDL_Init(SDL_INIT_VIDEO) || !TTF_Init()) {
 		return SDL_APP_FAILURE;
+	}
 
-	as->window = SDL_CreateWindow(app_name, 640, 480, SDL_WINDOW_RESIZABLE);
-	if (!as->window)
+	as->window = SDL_CreateWindow(app_name, WINDOW_WIDTH, WINDOW_HEIGHT,
+				      SDL_WINDOW_RESIZABLE);
+	if (!as->window) {
 		return SDL_APP_FAILURE;
-	/* Below this size the cards and button labels are unreadable. */
-	SDL_SetWindowMinimumSize(as->window, 320, 240);
+	}
+	SDL_SetWindowMinimumSize(as->window, MIN_WINDOW_WIDTH,
+				 MIN_WINDOW_HEIGHT);
 	as->renderer = SDL_CreateRenderer(as->window, NULL);
-	if (!as->renderer)
+	if (!as->renderer) {
 		return SDL_APP_FAILURE;
+	}
+	update_render_scale(as);
 
 	as->table_texture = load_texture(as->renderer, "wood_tile.png");
-	if (!as->table_texture)
+	if (!as->table_texture) {
 		return SDL_APP_FAILURE;
+	}
 	as->deck_texture =
 	    load_texture(as->renderer, "baraja_espanola_GNU.png");
-	if (!as->deck_texture)
+	if (!as->deck_texture) {
 		return SDL_APP_FAILURE;
+	}
 
 	SDL_SetRenderDrawBlendMode(as->renderer, SDL_BLENDMODE_BLEND);
 
 	SDL_GetTextureSize(as->deck_texture, &as->card_texture_size.x,
 			   &as->card_texture_size.y);
 
-	as->card_texture_size.x /= 12;
-	as->card_texture_size.y /= 5;
+	as->card_texture_size.x /= DECK_TEXTURE_COLUMNS;
+	as->card_texture_size.y /= DECK_TEXTURE_ROWS;
 
 	SDL_GetWindowSize(as->window, &as->window_size.x, &as->window_size.y);
 
-	if (!gui_init(as))
+	if (!gui_init(as)) {
 		return SDL_APP_FAILURE;
+	}
 
 	struct main_screen_state *ms = SDL_malloc(sizeof(*ms));
-	if (!ms)
+	if (!ms) {
 		return SDL_APP_FAILURE;
+	}
 	as->main_screen = ms;
 	SDL_memset(ms, 0, sizeof(*ms));
 
 	for (unsigned i = 0; i < NUM_GAMES; ++i) {
 		button_contexts[i].as = as;
+		button_contexts[i].id = (enum game_id)i;
 		ms->game_buttons[i] =
 		    button_init(as->gui, game_names[i], select_game_callback,
 				&button_contexts[i]);
-		if (!ms->game_buttons[i])
+		if (!ms->game_buttons[i]) {
 			return SDL_APP_FAILURE;
-		button_fit_width(ms->game_buttons[i], 200.f);
+		}
+		button_fit_width(ms->game_buttons[i], GAME_BUTTON_WIDTH);
 	}
 	position_game_buttons(as);
 
@@ -188,21 +240,27 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
 	case SDL_EVENT_WINDOW_RESIZED:
 		as->window_size.x = event->window.data1;
 		as->window_size.y = event->window.data2;
-		if (as->current_game == NO_GAME)
+		if (as->current_game == NO_GAME) {
 			position_game_buttons(as);
+		}
+		break;
+	case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+		update_render_scale(as);
 		break;
 	case SDL_EVENT_QUIT:
 		return SDL_APP_SUCCESS;
 	default:
 		break;
 	}
-	if (gui_event(as, event))
+	if (gui_event(as, event)) {
 		return SDL_APP_CONTINUE;
+	}
 
 	switch (as->current_game) {
 	case NO_GAME:
-		for (unsigned i = 0; i < NUM_GAMES; ++i)
+		for (unsigned i = 0; i < NUM_GAMES; ++i) {
 			button_event(as->main_screen->game_buttons[i], event);
+		}
 		break;
 	case SOLITARI:
 		solitari_event(as, event);
@@ -212,10 +270,14 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
 }
 
 static void draw_background(struct app_state *as) {
-	SDL_SetRenderDrawColor(as->renderer, 255, 255, 255, SDL_ALPHA_OPAQUE);
+	SDL_SetRenderDrawColor(as->renderer, background_color.r,
+			       background_color.g, background_color.b,
+			       background_color.a);
 	SDL_RenderClear(as->renderer);
-	SDL_FRect rect = {
-	    .x = 0, .y = 0, .w = as->window_size.x, .h = as->window_size.y};
+	SDL_FRect rect = {.x = 0,
+			  .y = 0,
+			  .w = (float)as->window_size.x,
+			  .h = (float)as->window_size.y};
 	SDL_RenderTextureTiled(as->renderer, as->table_texture, NULL, 1, &rect);
 }
 
@@ -223,15 +285,18 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
 	struct app_state *as = (struct app_state *)appstate;
 	as->last_frame_ticks = as->current_frame_ticks;
 	as->current_frame_ticks = SDL_GetTicks();
+
 	draw_background(as);
+
 	switch (as->current_game) {
 	case NO_GAME:
-		for (unsigned i = 0; i < NUM_GAMES; ++i)
+		for (unsigned i = 0; i < NUM_GAMES; ++i) {
 			button_draw(
 			    as, as->main_screen->game_buttons[i],
 			    button_is_pressing(as->main_screen->game_buttons[i])
-				? (SDL_Color){90, 170, 90, SDL_ALPHA_OPAQUE}
-				: (SDL_Color){120, 205, 120, SDL_ALPHA_OPAQUE});
+				? green_button_pressed_color
+				: green_button_color);
+		}
 		break;
 	case SOLITARI:
 		solitari_iterate(as);
@@ -239,30 +304,39 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
 	}
 
 	gui_iterate(as);
+
 	SDL_RenderPresent(as->renderer);
 	return SDL_APP_CONTINUE;
 }
 
 void SDL_AppQuit(void *appstate, SDL_AppResult result) {
 	struct app_state *as = (struct app_state *)appstate;
-	if (result == SDL_APP_FAILURE)
+	if (result == SDL_APP_FAILURE) {
 		SDL_Log("App finished due to failure: %s", SDL_GetError());
-	if (!as)
+	}
+	if (!as) {
 		return;
+	}
 	if (as->main_screen) {
-		for (unsigned i = 0; i < NUM_GAMES; ++i)
-			if (as->main_screen->game_buttons[i])
+		for (unsigned i = 0; i < NUM_GAMES; ++i) {
+			if (as->main_screen->game_buttons[i]) {
 				button_quit(as->main_screen->game_buttons[i]);
+			}
+		}
 		SDL_free(as->main_screen);
 	}
-	if (as->solitari)
+	if (as->solitari) {
 		solitari_quit(as->solitari);
-	if (as->gui)
+	}
+	if (as->gui) {
 		gui_quit(as->gui);
-	if (as->table_texture)
+	}
+	if (as->table_texture) {
 		SDL_DestroyTexture(as->table_texture);
-	if (as->deck_texture)
+	}
+	if (as->deck_texture) {
 		SDL_DestroyTexture(as->deck_texture);
+	}
 	TTF_Quit();
 	SDL_free(as);
 }

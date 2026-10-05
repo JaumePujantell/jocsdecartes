@@ -1,0 +1,27 @@
+# Strict checks for a C project
+Checks: >
+  -*,
+  bugprone-*,
+  cert-*,
+  clang-analyzer-*,
+  concurrency-*,
+  misc-*,
+  performance-*,
+  portability-*,
+  readability-*,
+  -bugprone-easily-swappable-parameters,
+  -readability-identifier-length
+
+WarningsAsErrors: '*'
+
+HeaderFilterRegex: '.*/src/.*'
+
+CheckOptions:
+  - key: readability-function-size.LineThreshold
+    value: 100
+  - key: readability-function-size.NestingThreshold
+    value: 4
+  - key: readability-magic-numbers.IgnoredFloatingPointValues
+    value: '1.0;2.0;100.0;'
+  - key: readability-uppercase-literal-suffix.IgnoreMacros
+    value: false
