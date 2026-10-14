@@ -67,7 +67,7 @@ set(SDLIMAGE_SAMPLES OFF)
 set(SDLIMAGE_INSTALL OFF)
 include_dependency(SDL3_image https://github.com/libsdl-org/SDL_image.git release-3.4.8 3.4.0)
 
-set(CSourceFiles "src/app.c" "src/gui.c" "src/cards.c" "src/solitari.c")
+set(CSourceFiles "src/app.c" "src/gui.c" "src/cards.c" "src/card_texture.c" "src/card_motion.c" "src/solitari.c" "src/setimig.c")
 
 set(TARGET_NAME ${PROJECT_NAME})
 if (ANDROID)

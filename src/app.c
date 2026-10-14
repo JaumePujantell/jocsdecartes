@@ -21,12 +21,10 @@
 
 #include <stdbool.h>
 
-#include "cards.h"
+#include "card_texture.h"
 #include "gui.h"
+#include "setimig.h"
 #include "solitari.h"
-
-#define DECK_TEXTURE_COLUMNS NUM_SUIT_CARDS
-#define DECK_TEXTURE_ROWS (NUM_SUITS + 1)
 
 #if (defined(WIN32) || defined(_WIN32) || defined(__WIN32)) &&                 \
     !defined(__CYGWIN__)
@@ -36,8 +34,7 @@
 #endif
 
 static const char *app_name = "Jocs de Cartes";
-static const char *game_names[] = {"El Solitari"};
-#define NUM_GAMES (sizeof(game_names) / sizeof(char *))
+static const char *game_names[NUM_GAMES] = {"El Solitari", "El Set i mig"};
 
 #define WINDOW_WIDTH 640
 #define WINDOW_HEIGHT 480
@@ -68,8 +65,7 @@ bool get_path_to_resource(char **path, const char *kind, const char *name) {
 }
 
 /* Load a png to an SDL_Texture, without using image lib */
-static SDL_Texture *load_texture(SDL_Renderer *renderer,
-				 const char *file_name) {
+SDL_Texture *load_texture(SDL_Renderer *renderer, const char *file_name) {
 	char *png_path = NULL;
 	if (!get_path_to_resource(&png_path, "textures", file_name)) {
 		return NULL;
@@ -111,6 +107,9 @@ static void position_game_buttons(struct app_state *as) {
 }
 
 void select_game(struct app_state *as, enum game_id id) {
+	if (as->current_game == SET_I_MIG) {
+		setimig_leave(as);
+	}
 	switch (id) {
 	case NO_GAME:
 		position_game_buttons(as);
@@ -127,6 +126,18 @@ void select_game(struct app_state *as, enum game_id id) {
 			solitari_restart(as->solitari);
 		}
 		break;
+	case SET_I_MIG:
+		if (!as->setimig) {
+			if (!setimig_init(as)) {
+				SDL_Log("Failed to start Set i mig: %s",
+					SDL_GetError());
+				return;
+			}
+		} else {
+			setimig_resize(as);
+			setimig_choose_options(as->setimig);
+		}
+		break;
 	};
 	as->current_game = id;
 }
@@ -137,6 +148,9 @@ void restart_current_game(struct app_state *as) {
 		break;
 	case SOLITARI:
 		solitari_restart(as->solitari);
+		break;
+	case SET_I_MIG:
+		setimig_restart(as->setimig);
 		break;
 	};
 }
@@ -189,19 +203,12 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
 	if (!as->table_texture) {
 		return SDL_APP_FAILURE;
 	}
-	as->deck_texture =
-	    load_texture(as->renderer, "baraja_espanola_GNU.png");
-	if (!as->deck_texture) {
+	as->card_texture = card_texture_init(as->renderer);
+	if (!as->card_texture) {
 		return SDL_APP_FAILURE;
 	}
 
 	SDL_SetRenderDrawBlendMode(as->renderer, SDL_BLENDMODE_BLEND);
-
-	SDL_GetTextureSize(as->deck_texture, &as->card_texture_size.x,
-			   &as->card_texture_size.y);
-
-	as->card_texture_size.x /= DECK_TEXTURE_COLUMNS;
-	as->card_texture_size.y /= DECK_TEXTURE_ROWS;
 
 	SDL_GetWindowSize(as->window, &as->window_size.x, &as->window_size.y);
 
@@ -225,8 +232,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
 		if (!ms->game_buttons[i]) {
 			return SDL_APP_FAILURE;
 		}
-		button_fit_width(ms->game_buttons[i], GAME_BUTTON_WIDTH);
 	}
+	button_group_fit_width(ms->game_buttons, NUM_GAMES, GAME_BUTTON_WIDTH);
 	position_game_buttons(as);
 
 	as->current_frame_ticks = SDL_GetTicks();
@@ -265,6 +272,9 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
 	case SOLITARI:
 		solitari_event(as, event);
 		break;
+	case SET_I_MIG:
+		setimig_event(as, event);
+		break;
 	}
 	return SDL_APP_CONTINUE;
 }
@@ -301,6 +311,9 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
 	case SOLITARI:
 		solitari_iterate(as);
 		break;
+	case SET_I_MIG:
+		setimig_iterate(as);
+		break;
 	}
 
 	gui_iterate(as);
@@ -328,14 +341,17 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result) {
 	if (as->solitari) {
 		solitari_quit(as->solitari);
 	}
+	if (as->setimig) {
+		setimig_quit(as);
+	}
 	if (as->gui) {
 		gui_quit(as->gui);
 	}
 	if (as->table_texture) {
 		SDL_DestroyTexture(as->table_texture);
 	}
-	if (as->deck_texture) {
-		SDL_DestroyTexture(as->deck_texture);
+	if (as->card_texture) {
+		card_texture_quit(as->card_texture);
 	}
 	TTF_Quit();
 	SDL_free(as);
