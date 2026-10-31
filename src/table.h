@@ -16,6 +16,8 @@
 
 enum player_id { USER, LEFT_BOT, TOP_BOT, RIGHT_BOT, NUM_PLAYERS };
 
+#define NUM_PLACES (NUM_PLAYERS - 1)
+
 #define MIN_PLAYERS 2U
 #define DEFAULT_PLAYERS_TEXT "4"
 
@@ -38,15 +40,48 @@ struct flying_data {
 	struct card_motion motion;
 };
 
+struct players_options {
+	struct label *caption;
+	struct input *input;
+	struct button *start_button;
+	button_callback on_start;
+	void *start_userdata;
+};
+
 extern const SDL_Color table_label_color;
 extern const SDL_Color input_color;
 
 unsigned players_in_input(const struct input *input);
 bool player_is_active(unsigned num_players, enum player_id id);
+enum player_id next_active_player(unsigned num_players, enum player_id id);
+enum player_id random_active_player(unsigned num_players);
 bool is_left_click_in(const SDL_Event *event, const SDL_FRect *rect);
 
 float option_gap(const struct app_state *as);
 float option_column_width(const struct app_state *as);
+
+bool players_options_init(struct gui_state *gui,
+			  struct players_options *options,
+			  button_callback on_start, void *userdata);
+void players_options_quit(struct app_state *as,
+			  struct players_options *options);
+void players_options_position(struct app_state *as,
+			      struct players_options *options);
+void players_options_mouse_down(struct app_state *as,
+				struct players_options *options,
+				const SDL_Event *event);
+void players_options_event(struct app_state *as,
+			   struct players_options *options,
+			   const SDL_Event *event);
+void players_options_update_start(struct players_options *options);
+void players_options_draw(struct app_state *as,
+			  struct players_options *options);
+
+bool place_labels_init(struct gui_state *gui, struct label *labels[NUM_PLACES]);
+void place_labels_quit(struct label *labels[NUM_PLACES]);
+void place_labels_fit(struct label *labels[NUM_PLACES], SDL_FPoint card_size);
+void draw_place(struct app_state *as, struct label *labels[NUM_PLACES],
+		SDL_FPoint card_size, enum player_id id, unsigned place);
 
 SDL_FPoint table_card_size(const struct app_state *as);
 SDL_FRect pile_rect(const struct app_state *as, SDL_FPoint card_size,

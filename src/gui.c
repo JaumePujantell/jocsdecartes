@@ -66,8 +66,12 @@ const SDL_Color green_button_color = {120, 205, 120, SDL_ALPHA_OPAQUE};
 const SDL_Color green_button_pressed_color = {90, 170, 90, SDL_ALPHA_OPAQUE};
 
 static const SDL_Color menu_button_color = {240, 240, 240, SDL_ALPHA_OPAQUE};
-static const SDL_Color menu_button_pressed_color = {190, 190, 190,
-						    SDL_ALPHA_OPAQUE};
+static const SDL_Color menu_button_pressed_color = {
+    190,
+    190,
+    190,
+    SDL_ALPHA_OPAQUE,
+};
 
 static const SDL_Color input_cursor_color = {0, 0, 0, SDL_ALPHA_OPAQUE};
 #define INPUT_CURSOR_WIDTH 2.F
@@ -143,8 +147,10 @@ static void quit_app(void *userdata) {
 
 static SDL_Point size_in_pixels(struct app_state *as, float w, float h) {
 	const float density = window_pixel_density(as);
-	return (SDL_Point){(int)SDL_ceilf(w * density),
-			   (int)SDL_ceilf(h * density)};
+	return (SDL_Point){
+	    (int)SDL_ceilf(w * density),
+	    (int)SDL_ceilf(h * density),
+	};
 }
 
 static SDL_Texture *svg_texture_from_stream(struct app_state *as,
@@ -214,8 +220,10 @@ static SDL_FPoint padded_text_size(const struct label *label) {
 	TTF_GetTextSize(label->text, &w, &h);
 	const float text_w = (float)w;
 	const float text_h = (float)h;
-	return (SDL_FPoint){text_w + (2.F * LABEL_PADDING_X * text_h),
-			    text_h + (2.F * LABEL_PADDING_Y * text_h)};
+	return (SDL_FPoint){
+	    text_w + (2.F * LABEL_PADDING_X * text_h),
+	    text_h + (2.F * LABEL_PADDING_Y * text_h),
+	};
 }
 
 #define LABEL_MIN_FONT_SIZE 4.F
@@ -252,8 +260,11 @@ static bool fit_app_menu(struct app_state *as) {
 		return true;
 	}
 
-	struct button *options[] = {gs->new_game_button, gs->main_menu_button,
-				    gs->quit_button};
+	struct button *options[] = {
+	    gs->new_game_button,
+	    gs->main_menu_button,
+	    gs->quit_button,
+	};
 	button_group_fit_width(options, SDL_arraysize(options),
 			       (float)window_side *
 				   APP_MENU_BUTTON_WIDTH_FRACTION);
@@ -432,7 +443,9 @@ static SDL_FRect label_text_rect(const struct label *label) {
 	return (SDL_FRect){
 	    SDL_roundf(label->rect.x + ((label->rect.w - (float)w) / 2.F)),
 	    SDL_roundf(label->rect.y + ((label->rect.h - (float)h) / 2.F)),
-	    (float)w, (float)h};
+	    (float)w,
+	    (float)h,
+	};
 }
 
 static void draw_label_background(struct app_state *appstate,
@@ -571,22 +584,27 @@ static SDL_FRect input_cursor_rect(const struct input *input) {
 	return (SDL_FRect){
 	    text_rect.x + text_rect.w,
 	    SDL_roundf(label->rect.y + ((label->rect.h - line_height) / 2.F)),
-	    INPUT_CURSOR_WIDTH, line_height};
+	    INPUT_CURSOR_WIDTH,
+	    line_height,
+	};
 }
 
 static void input_update_text_input_area(struct app_state *appstate,
 					 const struct input *input) {
 	const SDL_FRect *rect = &input->label->rect;
 	const SDL_Rect area = {
-	    (int)SDL_floorf(rect->x), (int)SDL_floorf(rect->y),
-	    (int)SDL_ceilf(rect->w), (int)SDL_ceilf(rect->h)};
+	    (int)SDL_floorf(rect->x),
+	    (int)SDL_floorf(rect->y),
+	    (int)SDL_ceilf(rect->w),
+	    (int)SDL_ceilf(rect->h),
+	};
 	const SDL_FRect cursor = input_cursor_rect(input);
 	SDL_SetTextInputArea(appstate->window, &area,
 			     (int)SDL_roundf(cursor.x) - area.x);
 }
 
-static bool input_has_focus(const struct app_state *appstate,
-			    const struct input *input) {
+bool input_has_focus(const struct app_state *appstate,
+		     const struct input *input) {
 	return appstate->gui->focused_input == input;
 }
 

@@ -60,8 +60,12 @@ struct bank_data {
 
 static const SDL_Color deck_empty_color = {100, 100, 100, 200};
 static const SDL_Color deck_button_color = {120, 205, 120, 220};
-static const SDL_Color deck_button_hover_color = {140, 220, 140,
-						  SDL_ALPHA_OPAQUE};
+static const SDL_Color deck_button_hover_color = {
+    140,
+    220,
+    140,
+    SDL_ALPHA_OPAQUE,
+};
 
 #define NUM_COLUMNS 8U
 #define CARD_SHOW_MARGIN 0.2F
@@ -82,10 +86,12 @@ static bool card_fits_on_card(card_t card, card_t target) {
 
 static SDL_FRect card_rect(const struct solitari_state *gs,
 			   SDL_FPoint position) {
-	return (SDL_FRect){.x = position.x,
-			   .y = position.y,
-			   .w = gs->card_size.x,
-			   .h = gs->card_size.y};
+	return (SDL_FRect){
+	    .x = position.x,
+	    .y = position.y,
+	    .w = gs->card_size.x,
+	    .h = gs->card_size.y,
+	};
 }
 
 static SDL_FRect column_rect(const struct solitari_state *gs,
@@ -99,16 +105,19 @@ static SDL_FRect column_rect(const struct solitari_state *gs,
 static SDL_FPoint drag_position(const struct solitari_state *gs,
 				SDL_FPoint point) {
 	const float margin = CARD_SHOW_MARGIN * gs->card_size.x;
-	return (SDL_FPoint){point.x - (gs->card_size.x / 2.F),
-			    point.y - (margin / 2.F)};
+	return (SDL_FPoint){
+	    point.x - (gs->card_size.x / 2.F),
+	    point.y - (margin / 2.F),
+	};
 }
 
 static SDL_FPoint first_receiving_position(const struct column_data *column) {
 	const unsigned first_receiving =
 	    column->num_cards - column->num_receiving;
-	return (SDL_FPoint){column->position.x,
-			    column->position.y +
-				((float)first_receiving * column->margin)};
+	return (SDL_FPoint){
+	    column->position.x,
+	    column->position.y + ((float)first_receiving * column->margin),
+	};
 }
 
 static void deal_cards(struct solitari_state *gs) {
@@ -159,11 +168,11 @@ void solitari_resize(struct app_state *appstate) {
 	const float window_width = (float)appstate->window_size.x;
 	const float window_height = (float)appstate->window_size.y;
 	float x1 =
-	    window_width /
-	    (NUM_COLUMNS + BLOCK_MARGIN * (NUM_COLUMNS - 1) + 2 * OUTER_MARGIN);
+	    window_width / (NUM_COLUMNS + (BLOCK_MARGIN * (NUM_COLUMNS - 1)) +
+			    (2 * OUTER_MARGIN));
 	float x2 = window_height /
-		   (2 * OUTER_MARGIN + 2 + BLOCK_MARGIN +
-		    NUM_SHOWN_CARDS * CARD_SHOW_MARGIN) *
+		   ((2 * OUTER_MARGIN) + 2 + BLOCK_MARGIN +
+		    (NUM_SHOWN_CARDS * CARD_SHOW_MARGIN)) *
 		   card_ratio;
 
 	gs->card_size.x = fminf(x1, x2);
@@ -172,7 +181,7 @@ void solitari_resize(struct app_state *appstate) {
 
 	float left = (window_width -
 		      (gs->card_size.x *
-		       (NUM_COLUMNS + BLOCK_MARGIN * (NUM_COLUMNS - 1)))) /
+		       (NUM_COLUMNS + (BLOCK_MARGIN * (NUM_COLUMNS - 1))))) /
 		     2.F;
 	float top = margin * 2.F;
 
@@ -300,7 +309,8 @@ static bool try_move_bottom_card_to_bank(struct solitari_state *gs,
 		const SDL_FPoint from = {
 		    column->position.x,
 		    column->position.y +
-			((float)(column->num_cards - 1) * column->margin)};
+			((float)(column->num_cards - 1) * column->margin),
+		};
 		card_motion_start(&gs->bank[b].motion, from, 0.0,
 				  gs->bank[b].position, gs->card_size.x,
 				  CARD_FLIGHT_MS);
@@ -523,7 +533,10 @@ static void draw_column(struct app_state *as, struct solitari_state *gs,
 	const unsigned n = column->num_cards;
 	SDL_FRect dest_rect = card_rect(gs, column->position);
 	SDL_FRect visible_rect = {
-	    .x = column->position.x, .w = gs->card_size.x, .h = column->margin};
+	    .x = column->position.x,
+	    .w = gs->card_size.x,
+	    .h = column->margin,
+	};
 	if (n == 0 || n == column->num_receiving) {
 		card_texture_draw(as->card_texture, CARD_OUTLINE, &dest_rect);
 		if (n == 0) {

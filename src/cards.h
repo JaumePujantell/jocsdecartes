@@ -24,6 +24,8 @@ typedef unsigned char card_t;
 #define SMALL_NUM_SUIT_CARDS (SMALL_NUM_VALUES + NUM_FIGURES)
 #define SMALL_SPANISH_DECK_SIZE (SMALL_NUM_SUIT_CARDS * NUM_SUITS)
 
+extern const card_t suits[NUM_SUITS];
+
 void fill_spanish_deck(card_t deck[SPANISH_DECK_SIZE]);
 void fill_small_spanish_deck(card_t deck[SMALL_SPANISH_DECK_SIZE]);
 void shuffle(card_t *set, unsigned n);

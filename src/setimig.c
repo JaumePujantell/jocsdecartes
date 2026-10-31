@@ -45,6 +45,7 @@ struct setimig_state {
 	struct player_data player[NUM_PLAYERS];
 	struct flying_data flying;
 	enum player_id current_player;
+	enum player_id round_starter;
 	bool revealed;
 	bool showing_discard;
 	bool choosing_options;
@@ -87,7 +88,7 @@ static void start_round(struct setimig_state *gamestate) {
 						   (enum player_id)i);
 	}
 	card_motion_stop(&gamestate->flying.motion);
-	gamestate->current_player = USER;
+	gamestate->current_player = gamestate->round_starter;
 	gamestate->revealed = false;
 }
 
@@ -109,6 +110,7 @@ static void start_game(struct setimig_state *gamestate) {
 		gamestate->player[i].num_cards = 0;
 		gamestate->player[i].wins = 0;
 	}
+	gamestate->round_starter = random_active_player(gamestate->num_players);
 	start_round(gamestate);
 }
 
@@ -145,8 +147,11 @@ static void position_options(struct app_state *appstate) {
 	const float window_width = (float)appstate->window_size.x;
 	const float window_height = (float)appstate->window_size.y;
 	const float gap = option_gap(appstate);
-	struct label *cells[] = {gs->players_caption, gs->wins_caption,
-				 button_get_label(gs->no_limit_button)};
+	struct label *cells[] = {
+	    gs->players_caption,
+	    gs->wins_caption,
+	    button_get_label(gs->no_limit_button),
+	};
 	label_group_fit_width(cells, SDL_arraysize(cells),
 			      option_column_width(appstate));
 	const SDL_FPoint choice_size = button_get_size(gs->no_limit_button);
@@ -236,7 +241,8 @@ static void all_buttons(struct setimig_state *gs,
 			struct button *buttons[NUM_BUTTONS]) {
 	struct button *const list[NUM_BUTTONS] = {
 	    gs->draw_button,  gs->pass_button,	   gs->next_round_button,
-	    gs->start_button, gs->new_game_button, gs->no_limit_button};
+	    gs->start_button, gs->new_game_button, gs->no_limit_button,
+	};
 	for (unsigned i = 0; i < NUM_BUTTONS; ++i) {
 		buttons[i] = list[i];
 	}
@@ -250,8 +256,12 @@ static void quit_gui(struct app_state *appstate, struct setimig_state *gs) {
 			button_quit(buttons[i]);
 		}
 	}
-	struct label *labels[] = {gs->won_label, gs->lost_label,
-				  gs->players_caption, gs->wins_caption};
+	struct label *labels[] = {
+	    gs->won_label,
+	    gs->lost_label,
+	    gs->players_caption,
+	    gs->wins_caption,
+	};
 	for (unsigned i = 0; i < SDL_arraysize(labels); ++i) {
 		if (labels[i]) {
 			label_quit(labels[i]);
@@ -346,14 +356,19 @@ static void score_round(struct setimig_state *gs) {
 			best = scores[i];
 		}
 	}
-	if (best == 0) {
-		return;
-	}
-	for (unsigned i = 0; i < NUM_PLAYERS; ++i) {
+	unsigned num_winners = 0;
+	enum player_id winner = gs->round_starter;
+	for (unsigned i = 0; i < NUM_PLAYERS && best > 0; ++i) {
 		if (scores[i] == best) {
 			++gs->player[i].wins;
+			++num_winners;
+			winner = (enum player_id)i;
 		}
 	}
+	gs->round_starter =
+	    num_winners == 1
+		? winner
+		: next_active_player(gs->num_players, gs->round_starter);
 }
 
 static void end_turn(struct setimig_state *gs) {
@@ -596,10 +611,14 @@ static void draw_star(struct app_state *as, SDL_FPoint center, float radius) {
 		const float r = k % 2 == 0 ? radius : radius * STAR_INNER_RATIO;
 		const float angle = (2.F * SDL_PI_F * (float)k / STAR_CORNERS) -
 				    (SDL_PI_F / 2.F);
-		vertices[k + 1] =
-		    (SDL_Vertex){.position = {center.x + (r * SDL_cosf(angle)),
-					      center.y + (r * SDL_sinf(angle))},
-				 .color = gold};
+		vertices[k + 1] = (SDL_Vertex){
+		    .position =
+			{
+			    center.x + (r * SDL_cosf(angle)),
+			    center.y + (r * SDL_sinf(angle)),
+			},
+		    .color = gold,
+		};
 		indices[3 * k] = 0;
 		indices[(3 * k) + 1] = (int)(k + 1);
 		indices[(3 * k) + 2] = (int)(((k + 1) % STAR_CORNERS) + 1);
@@ -632,7 +651,8 @@ static void draw_wins(struct app_state *as, enum player_id id) {
 		    column_offsets[k % stars_per_column] * step;
 		const SDL_FPoint star = {
 		    center.x + (direction.x * along) + (inward.x * across),
-		    center.y + (direction.y * along) + (inward.y * across)};
+		    center.y + (direction.y * along) + (inward.y * across),
+		};
 		draw_star(as, star, star_size / 2.F);
 	}
 }

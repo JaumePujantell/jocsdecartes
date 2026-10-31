@@ -1,6 +1,7 @@
 #include "table.h"
 
 #include <SDL3/SDL_events.h>
+#include <SDL3/SDL_keycode.h>
 #include <SDL3/SDL_mouse.h>
 #include <SDL3/SDL_pixels.h>
 #include <SDL3/SDL_rect.h>
@@ -33,6 +34,7 @@
 #define PILE_GAP 0.2F
 #define OPTION_ROW_WIDTH_FRACTION 0.8F
 #define OPTION_GAP_FRACTION 0.03F
+#define PLACE_WIDTH 0.5F
 
 const SDL_Color table_label_color = {255, 255, 255, 220};
 const SDL_Color input_color = {255, 255, 255, SDL_ALPHA_OPAQUE};
@@ -57,6 +59,22 @@ bool player_is_active(unsigned num_players, enum player_id id) {
 	}
 }
 
+enum player_id next_active_player(unsigned num_players, enum player_id id) {
+	do {
+		id = (enum player_id)((id + 1) % NUM_PLAYERS);
+	} while (!player_is_active(num_players, id));
+	return id;
+}
+
+enum player_id random_active_player(unsigned num_players) {
+	// The user is active in every game, so counting starts from the user.
+	enum player_id id = USER;
+	for (Sint32 skip = SDL_rand((Sint32)num_players); skip > 0; --skip) {
+		id = next_active_player(num_players, id);
+	}
+	return id;
+}
+
 bool is_left_click_in(const SDL_Event *event, const SDL_FRect *rect) {
 	const SDL_FPoint point = {event->button.x, event->button.y};
 	return event->button.button == SDL_BUTTON_LEFT &&
@@ -75,6 +93,139 @@ float option_column_width(const struct app_state *as) {
 	       (float)NUM_OPTION_COLUMNS;
 }
 
+bool players_options_init(struct gui_state *gui,
+			  struct players_options *options,
+			  button_callback on_start, void *userdata) {
+	options->caption = label_init(gui, "Jugadors");
+	options->input = input_init(gui, DEFAULT_PLAYERS_TEXT);
+	options->start_button = button_init(gui, "Comença", on_start, userdata);
+	options->on_start = on_start;
+	options->start_userdata = userdata;
+	return options->caption && options->input && options->start_button;
+}
+
+void players_options_quit(struct app_state *as,
+			  struct players_options *options) {
+	if (options->caption) {
+		label_quit(options->caption);
+	}
+	if (options->input) {
+		input_quit(as, options->input);
+	}
+	if (options->start_button) {
+		button_quit(options->start_button);
+	}
+}
+
+void players_options_position(struct app_state *as,
+			      struct players_options *options) {
+	const float window_width = (float)as->window_size.x;
+	const float window_height = (float)as->window_size.y;
+	const float gap = option_gap(as);
+	struct label *cells[] = {
+	    options->caption,
+	    button_get_label(options->start_button),
+	};
+	label_group_fit_width(cells, SDL_arraysize(cells),
+			      option_column_width(as));
+	const SDL_FPoint cell_size = button_get_size(options->start_button);
+	input_set_font_size(as, options->input,
+			    button_get_font_size(options->start_button));
+	input_set_size(as, options->input, cell_size.x, cell_size.y);
+
+	const float total_height = (2.F * cell_size.y) + (2.F * gap);
+	const float y = (window_height - total_height) / 2.F;
+	const float caption_x =
+	    (window_width - (2.F * cell_size.x) - gap) / 2.F;
+	label_set_position(options->caption, caption_x, y);
+	input_set_position(as, options->input, caption_x + cell_size.x + gap,
+			   y);
+	button_set_position(options->start_button,
+			    (window_width - cell_size.x) / 2.F,
+			    y + cell_size.y + (2.F * gap));
+}
+
+void players_options_mouse_down(struct app_state *as,
+				struct players_options *options,
+				const SDL_Event *event) {
+	if (!input_event(as, options->input, event)) {
+		button_event(options->start_button, event);
+	}
+}
+
+static bool is_enter_key(const SDL_Event *event) {
+	return event->type == SDL_EVENT_KEY_DOWN &&
+	       (event->key.key == SDLK_RETURN ||
+		event->key.key == SDLK_KP_ENTER);
+}
+
+void players_options_event(struct app_state *as,
+			   struct players_options *options,
+			   const SDL_Event *event) {
+	const bool start = is_enter_key(event) &&
+			   input_has_focus(as, options->input) &&
+			   players_in_input(options->input) != 0;
+	input_event(as, options->input, event);
+	if (start) {
+		options->on_start(options->start_userdata);
+	}
+}
+
+void players_options_update_start(struct players_options *options) {
+	button_set_enabled(options->start_button,
+			   players_in_input(options->input) != 0);
+}
+
+void players_options_draw(struct app_state *as,
+			  struct players_options *options) {
+	label_draw(as, options->caption, NULL);
+	draw_players_input(as, options->input);
+	button_draw_choice(as, options->start_button);
+}
+
+static const char *place_texts[NUM_PLACES] = {"1", "2", "3"};
+
+static const SDL_Color place_colors[NUM_PLACES] = {
+    {255, 215, 0, SDL_ALPHA_OPAQUE},
+    {192, 192, 192, SDL_ALPHA_OPAQUE},
+    {205, 127, 50, SDL_ALPHA_OPAQUE},
+};
+
+bool place_labels_init(struct gui_state *gui,
+		       struct label *labels[NUM_PLACES]) {
+	bool ok = true;
+	for (unsigned i = 0; i < NUM_PLACES; ++i) {
+		labels[i] = label_init(gui, place_texts[i]);
+		ok = ok && labels[i];
+	}
+	return ok;
+}
+
+void place_labels_quit(struct label *labels[NUM_PLACES]) {
+	for (unsigned i = 0; i < NUM_PLACES; ++i) {
+		if (labels[i]) {
+			label_quit(labels[i]);
+		}
+	}
+}
+
+void place_labels_fit(struct label *labels[NUM_PLACES], SDL_FPoint card_size) {
+	label_group_fit_width(labels, NUM_PLACES, PLACE_WIDTH * card_size.x);
+}
+
+void draw_place(struct app_state *as, struct label *labels[NUM_PLACES],
+		SDL_FPoint card_size, enum player_id id, unsigned place) {
+	if (place == 0) {
+		return;
+	}
+	struct label *label = labels[place - 1];
+	const SDL_FPoint center = seat_center(as, card_size, id);
+	const SDL_FPoint size = label_get_size(label);
+	label_set_position(label, center.x - (size.x / 2.F),
+			   center.y - (size.y / 2.F));
+	label_draw(as, label, &place_colors[place - 1]);
+}
+
 SDL_FPoint table_card_size(const struct app_state *as) {
 	const float card_ratio = card_texture_aspect_ratio(as->card_texture);
 	SDL_FPoint size;
@@ -90,11 +241,12 @@ SDL_FRect pile_rect(const struct app_state *as, SDL_FPoint card_size,
 	const float gap = PILE_GAP * card_size.x;
 	const float left =
 	    ((float)as->window_size.x - (2.F * card_size.x) - gap) / 2.F;
-	return (SDL_FRect){.x = left +
-				(pile == RIGHT_PILE ? card_size.x + gap : 0.F),
-			   .y = ((float)as->window_size.y - card_size.y) / 2.F,
-			   .w = card_size.x,
-			   .h = card_size.y};
+	return (SDL_FRect){
+	    .x = left + (pile == RIGHT_PILE ? card_size.x + gap : 0.F),
+	    .y = ((float)as->window_size.y - card_size.y) / 2.F,
+	    .w = card_size.x,
+	    .h = card_size.y,
+	};
 }
 
 float hand_length(SDL_FPoint card_size, unsigned n) {
@@ -104,11 +256,15 @@ float hand_length(SDL_FPoint card_size, unsigned n) {
 static struct card_placement turned_card(SDL_FPoint card_size, float left,
 					 float top, double angle) {
 	return (struct card_placement){
-	    .rect = {.x = left + ((card_size.y - card_size.x) / 2.F),
-		     .y = top + ((card_size.x - card_size.y) / 2.F),
-		     .w = card_size.x,
-		     .h = card_size.y},
-	    .angle = angle};
+	    .rect =
+		{
+		    .x = left + ((card_size.y - card_size.x) / 2.F),
+		    .y = top + ((card_size.x - card_size.y) / 2.F),
+		    .w = card_size.x,
+		    .h = card_size.y,
+		},
+	    .angle = angle,
+	};
 }
 
 struct card_placement hand_card(const struct app_state *as,
@@ -122,9 +278,14 @@ struct card_placement hand_card(const struct app_state *as,
 	    ((window_width - hand_length(card_size, n)) / 2.F);
 	const float column_top =
 	    ((window_height - hand_length(card_size, n)) / 2.F);
-	struct card_placement placement = {.rect = {.x = row_left + offset,
-						    .w = card_size.x,
-						    .h = card_size.y}};
+	struct card_placement placement = {
+	    .rect =
+		{
+		    .x = row_left + offset,
+		    .w = card_size.x,
+		    .h = card_size.y,
+		},
+	};
 	switch (id) {
 	case USER:
 		placement.rect.y = window_height - card_size.y - outer_margin;
@@ -155,16 +316,20 @@ SDL_FPoint seat_center(const struct app_state *as, SDL_FPoint card_size,
 	    (OUTER_MARGIN * card_size.y) + (card_size.y / 2.F);
 	switch (id) {
 	case USER:
-		return (SDL_FPoint){window_width / 2.F,
-				    window_height - from_edge};
+		return (SDL_FPoint){
+		    window_width / 2.F,
+		    window_height - from_edge,
+		};
 	case TOP_BOT:
 		return (SDL_FPoint){window_width / 2.F, from_edge};
 	case LEFT_BOT:
 		return (SDL_FPoint){from_edge, window_height / 2.F};
 	case RIGHT_BOT:
 	default:
-		return (SDL_FPoint){window_width - from_edge,
-				    window_height / 2.F};
+		return (SDL_FPoint){
+		    window_width - from_edge,
+		    window_height / 2.F,
+		};
 	}
 }
 
@@ -184,28 +349,41 @@ SDL_FPoint seat_inward(enum player_id id) {
 
 void draw_turn_arrow(struct app_state *as, SDL_FPoint card_size,
 		     enum player_id id) {
-	const SDL_FColor color = {(float)table_label_color.r / 255.F,
-				  (float)table_label_color.g / 255.F,
-				  (float)table_label_color.b / 255.F,
-				  (float)table_label_color.a / 255.F};
+	const SDL_FColor color = {
+	    (float)table_label_color.r / 255.F,
+	    (float)table_label_color.g / 255.F,
+	    (float)table_label_color.b / 255.F,
+	    (float)table_label_color.a / 255.F,
+	};
 	const float size = TURN_ARROW_SIZE * card_size.x;
 	const SDL_FPoint center = seat_center(as, card_size, id);
 	const SDL_FPoint inward = seat_inward(id);
 	const float tip_distance =
 	    (card_size.y / 2.F) + (TURN_ARROW_GAP * card_size.y);
 	const float base_distance = tip_distance + size;
-	const SDL_FPoint tip = {center.x + (inward.x * tip_distance),
-				center.y + (inward.y * tip_distance)};
-	const SDL_FPoint base = {center.x + (inward.x * base_distance),
-				 center.y + (inward.y * base_distance)};
-	const SDL_FPoint across = {-inward.y * size / 2.F,
-				   inward.x * size / 2.F};
+	const SDL_FPoint tip = {
+	    center.x + (inward.x * tip_distance),
+	    center.y + (inward.y * tip_distance),
+	};
+	const SDL_FPoint base = {
+	    center.x + (inward.x * base_distance),
+	    center.y + (inward.y * base_distance),
+	};
+	const SDL_FPoint across = {
+	    -inward.y * size / 2.F,
+	    inward.x * size / 2.F,
+	};
 	const SDL_Vertex vertices[] = {
 	    {.position = tip, .color = color},
-	    {.position = {base.x + across.x, base.y + across.y},
-	     .color = color},
-	    {.position = {base.x - across.x, base.y - across.y},
-	     .color = color}};
+	    {
+		.position = {base.x + across.x, base.y + across.y},
+		.color = color,
+	    },
+	    {
+		.position = {base.x - across.x, base.y - across.y},
+		.color = color,
+	    },
+	};
 	SDL_RenderGeometry(as->renderer, NULL, vertices,
 			   (int)SDL_arraysize(vertices), NULL, 0);
 }
@@ -226,10 +404,12 @@ static SDL_FRect screen_rect(const struct card_placement *placement) {
 		return placement->rect;
 	}
 	const SDL_FRect *rect = &placement->rect;
-	return (SDL_FRect){.x = rect->x + ((rect->w - rect->h) / 2.F),
-			   .y = rect->y + ((rect->h - rect->w) / 2.F),
-			   .w = rect->h,
-			   .h = rect->w};
+	return (SDL_FRect){
+	    .x = rect->x + ((rect->w - rect->h) / 2.F),
+	    .y = rect->y + ((rect->h - rect->w) / 2.F),
+	    .w = rect->h,
+	    .h = rect->w,
+	};
 }
 
 unsigned hand_card_at(const struct app_state *as, SDL_FPoint card_size,
@@ -255,8 +435,10 @@ void draw_card(struct app_state *as, card_t card,
 void draw_hand(struct app_state *as, SDL_FPoint card_size, enum player_id id,
 	       const card_t *cards, unsigned num_settled, unsigned n,
 	       bool face_up, unsigned lifted, SDL_FPoint mouse) {
-	SDL_FRect visible_rect = {.w = CARD_SHOW_MARGIN * card_size.x,
-				  .h = card_size.y};
+	SDL_FRect visible_rect = {
+	    .w = CARD_SHOW_MARGIN * card_size.x,
+	    .h = card_size.y,
+	};
 	bool draw_hovered = false;
 	card_t hovered_card;
 	struct card_placement hovered_placement;
@@ -319,8 +501,12 @@ static struct discard_spread spread_discard(const struct app_state *as,
 	const float window_width = (float)as->window_size.x;
 	const float window_height = (float)as->window_size.y;
 	struct discard_spread spread = {
-	    .step = {CARD_SHOW_MARGIN * card_size.x,
-		     card_size.y * (1.F + DISCARD_ROW_GAP)}};
+	    .step =
+		{
+		    CARD_SHOW_MARGIN * card_size.x,
+		    card_size.y * (1.F + DISCARD_ROW_GAP),
+		},
+	};
 	const float row_room =
 	    (DISCARD_SPREAD_WIDTH_FRACTION * window_width) - card_size.x;
 	spread.per_row =
@@ -346,11 +532,12 @@ static SDL_FRect spread_card_rect(SDL_FPoint card_size,
 				  unsigned i) {
 	const unsigned row = i / spread->per_row;
 	const unsigned column = i % spread->per_row;
-	return (SDL_FRect){.x = spread->first.x +
-				((float)column * spread->step.x),
-			   .y = spread->first.y + ((float)row * spread->step.y),
-			   .w = card_size.x,
-			   .h = card_size.y};
+	return (SDL_FRect){
+	    .x = spread->first.x + ((float)column * spread->step.x),
+	    .y = spread->first.y + ((float)row * spread->step.y),
+	    .w = card_size.x,
+	    .h = card_size.y,
+	};
 }
 
 static const SDL_Color discard_backdrop_color = {0, 0, 0, 160};

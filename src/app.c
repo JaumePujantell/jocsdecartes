@@ -25,6 +25,7 @@
 #include "gui.h"
 #include "mona.h"
 #include "setimig.h"
+#include "siset.h"
 #include "solitari.h"
 
 #if (defined(WIN32) || defined(_WIN32) || defined(__WIN32)) &&                 \
@@ -35,8 +36,12 @@
 #endif
 
 static const char *app_name = "Jocs de Cartes";
-static const char *game_names[NUM_GAMES] = {"El Solitari", "El Set i mig",
-					    "La Mona"};
+static const char *game_names[NUM_GAMES] = {
+    "El Solitari",
+    "El Set i mig",
+    "La Mona",
+    "El Siset",
+};
 
 #define WINDOW_WIDTH 640
 #define WINDOW_HEIGHT 480
@@ -144,12 +149,24 @@ static void layout_game_buttons(struct app_state *as) {
 	}
 }
 
-void select_game(struct app_state *as, enum game_id id) {
-	if (as->current_game == SET_I_MIG) {
+static void leave_current_game(struct app_state *as) {
+	switch (as->current_game) {
+	case SET_I_MIG:
 		setimig_leave(as);
-	} else if (as->current_game == LA_MONA) {
+		break;
+	case LA_MONA:
 		mona_leave(as);
+		break;
+	case EL_SISET:
+		siset_leave(as);
+		break;
+	default:
+		break;
 	}
+}
+
+void select_game(struct app_state *as, enum game_id id) {
+	leave_current_game(as);
 	switch (id) {
 	case NO_GAME:
 		layout_game_buttons(as);
@@ -190,6 +207,18 @@ void select_game(struct app_state *as, enum game_id id) {
 			mona_choose_options(as->mona);
 		}
 		break;
+	case EL_SISET:
+		if (!as->siset) {
+			if (!siset_init(as)) {
+				SDL_Log("Failed to start El Siset: %s",
+					SDL_GetError());
+				return;
+			}
+		} else {
+			siset_resize(as);
+			siset_choose_options(as->siset);
+		}
+		break;
 	}
 	as->current_game = id;
 }
@@ -202,6 +231,8 @@ bool current_game_can_restart(const struct app_state *as) {
 		return !setimig_is_choosing_options(as->setimig);
 	case LA_MONA:
 		return !mona_is_choosing_options(as->mona);
+	case EL_SISET:
+		return !siset_is_choosing_options(as->siset);
 	default:
 		return false;
 	}
@@ -219,6 +250,9 @@ void restart_current_game(struct app_state *as) {
 		break;
 	case LA_MONA:
 		mona_restart(as->mona);
+		break;
+	case EL_SISET:
+		siset_restart(as->siset);
 		break;
 	}
 }
@@ -343,6 +377,9 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
 	case LA_MONA:
 		mona_event(as, event);
 		break;
+	case EL_SISET:
+		siset_event(as, event);
+		break;
 	}
 	return SDL_APP_CONTINUE;
 }
@@ -352,10 +389,12 @@ static void draw_background(struct app_state *as) {
 			       background_color.g, background_color.b,
 			       background_color.a);
 	SDL_RenderClear(as->renderer);
-	SDL_FRect rect = {.x = 0,
-			  .y = 0,
-			  .w = (float)as->window_size.x,
-			  .h = (float)as->window_size.y};
+	SDL_FRect rect = {
+	    .x = 0,
+	    .y = 0,
+	    .w = (float)as->window_size.x,
+	    .h = (float)as->window_size.y,
+	};
 	SDL_RenderTextureTiled(as->renderer, as->table_texture, NULL, 1, &rect);
 }
 
@@ -383,6 +422,9 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
 		break;
 	case LA_MONA:
 		mona_iterate(as);
+		break;
+	case EL_SISET:
+		siset_iterate(as);
 		break;
 	}
 
@@ -416,6 +458,9 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result) {
 	}
 	if (as->mona) {
 		mona_quit(as);
+	}
+	if (as->siset) {
+		siset_quit(as);
 	}
 	if (as->gui) {
 		gui_quit(as->gui);

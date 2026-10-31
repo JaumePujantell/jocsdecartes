@@ -65,6 +65,8 @@ void input_draw(struct app_state *appstate, struct input *input,
 		SDL_Color background_color);
 void input_quit(struct app_state *appstate, struct input *input);
 void input_unfocus(struct app_state *appstate, struct input *input);
+bool input_has_focus(const struct app_state *appstate,
+		     const struct input *input);
 void input_set_position(struct app_state *appstate, struct input *input,
 			float x, float y);
 void input_set_size(struct app_state *appstate, struct input *input, float w,

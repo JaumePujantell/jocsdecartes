@@ -4,7 +4,7 @@
 
 #include <stdbool.h>
 
-static const card_t suits[NUM_SUITS] = {ORS, COPES, ESPASES, BASTOS};
+const card_t suits[NUM_SUITS] = {ORS, COPES, ESPASES, BASTOS};
 
 void fill_spanish_deck(card_t deck[SPANISH_DECK_SIZE]) {
 	unsigned n = 0;

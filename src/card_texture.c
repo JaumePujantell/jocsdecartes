@@ -59,10 +59,12 @@ static SDL_FRect source_rect(const struct card_texture *ct, card_t card) {
 		column = (card & VAL_MASK) - 1;
 		row = ((card & SUIT_MASK) >> SUIT_OFFSET) - 1;
 	}
-	return (SDL_FRect){.x = ct->card_size.x * (float)column,
-			   .y = ct->card_size.y * (float)row,
-			   .w = ct->card_size.x,
-			   .h = ct->card_size.y};
+	return (SDL_FRect){
+	    .x = ct->card_size.x * (float)column,
+	    .y = ct->card_size.y * (float)row,
+	    .w = ct->card_size.x,
+	    .h = ct->card_size.y,
+	};
 }
 
 void card_texture_draw(const struct card_texture *ct, card_t card,

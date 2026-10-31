@@ -2,7 +2,6 @@
 
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_mouse.h>
-#include <SDL3/SDL_pixels.h>
 #include <SDL3/SDL_rect.h>
 #include <SDL3/SDL_stdinc.h>
 
@@ -28,10 +27,6 @@ enum turn_phase { BEFORE_TAKING, AFTER_TAKING };
 #define CARD_TAKE_MS 400U
 #define CARD_DISCARD_MS 300U
 #define BOT_STEP_MS 700U
-#define NUM_PLACES (NUM_PLAYERS - 1)
-
-static const char *place_texts[NUM_PLACES] = {"1", "2", "3"};
-
 struct mona_state {
 	card_t deck[SPANISH_DECK_SIZE];
 	unsigned deck_size;
@@ -52,9 +47,7 @@ struct mona_state {
 	bool choosing_options;
 	unsigned num_players;
 	SDL_FPoint card_size;
-	struct label *players_caption;
-	struct input *players_input;
-	struct button *start_button;
+	struct players_options options;
 	struct label *take_hint_label;
 	struct button *end_turn_button;
 	struct button *new_game_button;
@@ -64,7 +57,7 @@ struct mona_state {
 static void start_game(struct mona_state *gamestate) {
 	gamestate->choosing_options = false;
 	gamestate->showing_discard = false;
-	const unsigned players = players_in_input(gamestate->players_input);
+	const unsigned players = players_in_input(gamestate->options.input);
 	if (players != 0) {
 		gamestate->num_players = players;
 	}
@@ -80,8 +73,10 @@ static void start_game(struct mona_state *gamestate) {
 	}
 	card_motion_stop(&gamestate->flying.motion);
 	card_motion_stop(&gamestate->discard_motion);
-	gamestate->dealing_to = USER;
-	gamestate->current_player = USER;
+	const enum player_id first =
+	    random_active_player(gamestate->num_players);
+	gamestate->dealing_to = first;
+	gamestate->current_player = first;
 	gamestate->phase = BEFORE_TAKING;
 	gamestate->selected = NO_CARD_INDEX;
 	gamestate->num_out = 0;
@@ -106,39 +101,6 @@ static void start_game_clicked(void *userdata) {
 #define ACTION_GAP 0.3F
 #define BUTTON_WIDTH 1.6F
 #define HINT_WIDTH 3.F
-#define PLACE_WIDTH 0.5F
-
-static void position_options(struct app_state *appstate) {
-	struct mona_state *gs = appstate->mona;
-	const float window_width = (float)appstate->window_size.x;
-	const float window_height = (float)appstate->window_size.y;
-	const float gap = option_gap(appstate);
-	struct label *cells[] = {gs->players_caption,
-				 button_get_label(gs->start_button)};
-	label_group_fit_width(cells, SDL_arraysize(cells),
-			      option_column_width(appstate));
-	const SDL_FPoint cell_size = button_get_size(gs->start_button);
-	input_set_font_size(appstate, gs->players_input,
-			    button_get_font_size(gs->start_button));
-	input_set_size(appstate, gs->players_input, cell_size.x, cell_size.y);
-
-	const float total_height = (2.F * cell_size.y) + (2.F * gap);
-	const float y = (window_height - total_height) / 2.F;
-	const float caption_x =
-	    (window_width - (2.F * cell_size.x) - gap) / 2.F;
-	label_set_position(gs->players_caption, caption_x, y);
-	input_set_position(appstate, gs->players_input,
-			   caption_x + cell_size.x + gap, y);
-	button_set_position(gs->start_button,
-			    (window_width - cell_size.x) / 2.F,
-			    y + cell_size.y + (2.F * gap));
-}
-
-static void position_place_labels(struct app_state *appstate) {
-	struct mona_state *gs = appstate->mona;
-	label_group_fit_width(gs->place_labels, NUM_PLACES,
-			      PLACE_WIDTH * gs->card_size.x);
-}
 
 static void position_actions(struct app_state *appstate) {
 	struct mona_state *gs = appstate->mona;
@@ -163,28 +125,19 @@ static void position_actions(struct app_state *appstate) {
 
 void mona_resize(struct app_state *appstate) {
 	appstate->mona->card_size = table_card_size(appstate);
-	position_options(appstate);
+	players_options_position(appstate, &appstate->mona->options);
 	position_actions(appstate);
-	position_place_labels(appstate);
+	place_labels_fit(appstate->mona->place_labels,
+			 appstate->mona->card_size);
 }
 
 static void quit_gui(struct app_state *appstate, struct mona_state *gs) {
-	struct label *labels[] = {gs->players_caption, gs->take_hint_label};
-	for (unsigned i = 0; i < SDL_arraysize(labels); ++i) {
-		if (labels[i]) {
-			label_quit(labels[i]);
-		}
+	players_options_quit(appstate, &gs->options);
+	if (gs->take_hint_label) {
+		label_quit(gs->take_hint_label);
 	}
-	for (unsigned i = 0; i < NUM_PLACES; ++i) {
-		if (gs->place_labels[i]) {
-			label_quit(gs->place_labels[i]);
-		}
-	}
-	if (gs->players_input) {
-		input_quit(appstate, gs->players_input);
-	}
-	struct button *buttons[] = {gs->start_button, gs->end_turn_button,
-				    gs->new_game_button};
+	place_labels_quit(gs->place_labels);
+	struct button *buttons[] = {gs->end_turn_button, gs->new_game_button};
 	for (unsigned i = 0; i < SDL_arraysize(buttons); ++i) {
 		if (buttons[i]) {
 			button_quit(buttons[i]);
@@ -196,23 +149,17 @@ static void end_turn_clicked(void *userdata);
 
 static bool init_gui(struct app_state *appstate, struct mona_state *gs) {
 	struct gui_state *gui = appstate->gui;
-	gs->players_caption = label_init(gui, "Jugadors");
-	gs->players_input = input_init(gui, DEFAULT_PLAYERS_TEXT);
-	gs->start_button = button_init(gui, "Comença", start_game_clicked, gs);
+	const bool options_ok =
+	    players_options_init(gui, &gs->options, start_game_clicked, gs);
 	gs->take_hint_label =
 	    label_init(gui, "Agafa una carta d'un altre jugador");
 	gs->end_turn_button =
 	    button_init(gui, "Acaba el torn", end_turn_clicked, appstate);
 	gs->new_game_button =
 	    button_init(gui, "Nova partida", start_game_clicked, gs);
-	bool ok = gs->players_caption && gs->players_input &&
-		  gs->start_button && gs->take_hint_label &&
-		  gs->end_turn_button && gs->new_game_button;
-	for (unsigned i = 0; i < NUM_PLACES; ++i) {
-		gs->place_labels[i] = label_init(gui, place_texts[i]);
-		ok = ok && gs->place_labels[i];
-	}
-	return ok;
+	const bool places_ok = place_labels_init(gui, gs->place_labels);
+	return options_ok && places_ok && gs->take_hint_label &&
+	       gs->end_turn_button && gs->new_game_button;
 }
 
 bool mona_init(struct app_state *appstate) {
@@ -493,9 +440,8 @@ void mona_event(struct app_state *appstate, SDL_Event *event) {
 	switch (event->type) {
 	case SDL_EVENT_MOUSE_BUTTON_DOWN:
 		if (gs->choosing_options) {
-			if (!input_event(appstate, gs->players_input, event)) {
-				button_event(gs->start_button, event);
-			}
+			players_options_mouse_down(appstate, &gs->options,
+						   event);
 		} else if (gs->showing_discard) {
 			gs->showing_discard = false;
 		} else if (!play_mouse_down(appstate, event) &&
@@ -504,7 +450,7 @@ void mona_event(struct app_state *appstate, SDL_Event *event) {
 		}
 		break;
 	case SDL_EVENT_MOUSE_BUTTON_UP:
-		button_event(gs->start_button, event);
+		button_event(gs->options.start_button, event);
 		button_event(gs->end_turn_button, event);
 		button_event(gs->new_game_button, event);
 		break;
@@ -513,19 +459,11 @@ void mona_event(struct app_state *appstate, SDL_Event *event) {
 		break;
 	default:
 		if (gs->choosing_options) {
-			input_event(appstate, gs->players_input, event);
+			players_options_event(appstate, &gs->options, event);
 		}
 		break;
 	}
-	button_set_enabled(gs->start_button,
-			   players_in_input(gs->players_input) != 0);
-}
-
-static void draw_options(struct app_state *as) {
-	struct mona_state *gs = as->mona;
-	label_draw(as, gs->players_caption, NULL);
-	draw_players_input(as, gs->players_input);
-	button_draw_choice(as, gs->start_button);
+	players_options_update_start(&gs->options);
 }
 
 static void draw_piles(struct app_state *as) {
@@ -557,7 +495,8 @@ static void draw_discard_flying(struct app_state *as) {
 	    &gs->discard_motion, (SDL_FPoint){end.x, end.y}, now);
 	const struct card_placement placement = {
 	    .rect = {.x = position.x, .y = position.y, .w = end.w, .h = end.h},
-	    .angle = card_motion_angle(&gs->discard_motion, 0.0, now)};
+	    .angle = card_motion_angle(&gs->discard_motion, 0.0, now),
+	};
 	draw_card(as, gs->discard[gs->discard_size - 1], &placement);
 }
 
@@ -573,25 +512,6 @@ static void draw_player_hand(struct app_state *as, enum player_id id,
 		  player->num_cards - player->num_receiving, player->num_cards,
 		  shows_face(gs, id), id == USER ? gs->selected : NO_CARD_INDEX,
 		  mouse);
-}
-
-static const SDL_Color place_colors[NUM_PLACES] = {
-    {255, 215, 0, SDL_ALPHA_OPAQUE},
-    {192, 192, 192, SDL_ALPHA_OPAQUE},
-    {205, 127, 50, SDL_ALPHA_OPAQUE}};
-
-static void draw_place(struct app_state *as, enum player_id id) {
-	const struct mona_state *gs = as->mona;
-	const unsigned place = gs->player[id].place;
-	if (place == 0) {
-		return;
-	}
-	struct label *label = gs->place_labels[place - 1];
-	const SDL_FPoint center = seat_center(as, gs->card_size, id);
-	const SDL_FPoint size = label_get_size(label);
-	label_set_position(label, center.x - (size.x / 2.F),
-			   center.y - (size.y / 2.F));
-	label_draw(as, label, &place_colors[place - 1]);
 }
 
 static void draw_flying(struct app_state *as) {
@@ -617,7 +537,7 @@ static void draw_actions(struct app_state *as) {
 
 void mona_iterate(struct app_state *appstate) {
 	if (appstate->mona->choosing_options) {
-		draw_options(appstate);
+		players_options_draw(appstate, &appstate->mona->options);
 		return;
 	}
 	mona_update(appstate);
@@ -626,7 +546,9 @@ void mona_iterate(struct app_state *appstate) {
 	draw_piles(appstate);
 	for (unsigned i = 0; i < NUM_PLAYERS; ++i) {
 		draw_player_hand(appstate, (enum player_id)i, mouse);
-		draw_place(appstate, (enum player_id)i);
+		draw_place(appstate, appstate->mona->place_labels,
+			   appstate->mona->card_size, (enum player_id)i,
+			   appstate->mona->player[i].place);
 	}
 	const struct mona_state *gs = appstate->mona;
 	if (!gs->game_over && gs->deck_size == 0 &&
@@ -643,7 +565,7 @@ void mona_iterate(struct app_state *appstate) {
 }
 
 void mona_leave(struct app_state *appstate) {
-	input_unfocus(appstate, appstate->mona->players_input);
+	input_unfocus(appstate, appstate->mona->options.input);
 }
 
 void mona_quit(struct app_state *appstate) {

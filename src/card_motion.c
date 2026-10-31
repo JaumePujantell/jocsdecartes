@@ -48,7 +48,7 @@ static float eased_progress(const struct card_motion *motion, Uint64 now) {
 	}
 	const float t = SDL_min(
 	    (float)elapsed_ms(motion, now) / (float)motion->duration_ms, 1.F);
-	return t * t * (3 - 2 * t);
+	return t * t * (3 - (2 * t));
 }
 
 SDL_FPoint card_motion_position(const struct card_motion *motion, SDL_FPoint to,
@@ -56,7 +56,8 @@ SDL_FPoint card_motion_position(const struct card_motion *motion, SDL_FPoint to,
 	const float progress = eased_progress(motion, now);
 	return (SDL_FPoint){
 	    motion->from.x + ((to.x - motion->from.x) * progress),
-	    motion->from.y + ((to.y - motion->from.y) * progress)};
+	    motion->from.y + ((to.y - motion->from.y) * progress),
+	};
 }
 
 double card_motion_angle(const struct card_motion *motion, double to_angle,

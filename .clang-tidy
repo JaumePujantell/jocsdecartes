@@ -2,6 +2,8 @@
 Checks: >
   -*,
   bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-signed-bitwise,
   cert-*,
   clang-analyzer-*,
   concurrency-*,
@@ -9,7 +11,6 @@ Checks: >
   performance-*,
   portability-*,
   readability-*,
-  -bugprone-easily-swappable-parameters,
   -readability-identifier-length
 
 WarningsAsErrors: '*'
@@ -21,6 +22,8 @@ CheckOptions:
     value: 100
   - key: readability-function-size.NestingThreshold
     value: 4
+  - key: readability-implicit-bool-conversion.AllowLogicalOperatorConversion
+    value: true
   - key: readability-magic-numbers.IgnoredFloatingPointValues
     value: '1.0;2.0;100.0;'
   - key: readability-uppercase-literal-suffix.IgnoreMacros
