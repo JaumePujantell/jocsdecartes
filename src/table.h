@@ -25,7 +25,8 @@ enum player_id { USER, LEFT_BOT, TOP_BOT, RIGHT_BOT, NUM_PLAYERS };
 #define NO_CARD_INDEX UINT_MAX
 
 #define NUM_OPTION_COLUMNS 3U
-/ enum pile_id { LEFT_PILE, RIGHT_PILE };
+
+enum pile_id { LEFT_PILE, RIGHT_PILE };
 
 struct card_placement {
 	SDL_FRect rect;
@@ -56,6 +57,7 @@ struct card_placement hand_card(const struct app_state *as,
 				unsigned j, unsigned n);
 SDL_FPoint seat_center(const struct app_state *as, SDL_FPoint card_size,
 		       enum player_id id);
+SDL_FPoint seat_inward(enum player_id id);
 unsigned hand_card_at(const struct app_state *as, SDL_FPoint card_size,
 		      enum player_id id, unsigned n, unsigned lifted,
 		      SDL_FPoint point);
@@ -72,6 +74,8 @@ void draw_hand(struct app_state *as, SDL_FPoint card_size, enum player_id id,
 void draw_flying_card(struct app_state *as, SDL_FPoint card_size,
 		      const struct flying_data *flying, const card_t *cards,
 		      unsigned n, bool face_up);
+void draw_turn_arrow(struct app_state *as, SDL_FPoint card_size,
+		     enum player_id id);
 void draw_discard_spread(struct app_state *as, SDL_FPoint card_size,
 			 const card_t *cards, unsigned num_cards,
 			 SDL_FPoint mouse);

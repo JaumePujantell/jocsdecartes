@@ -257,7 +257,7 @@ static unsigned num_in_game(const struct mona_state *gs) {
 static enum player_id next_player(const struct mona_state *gs,
 				  enum player_id id) {
 	do {
-		id = (enum player_id)((id + NUM_PLAYERS - 1) % NUM_PLAYERS);
+		id = (enum player_id)((id + 1) % NUM_PLAYERS);
 	} while (!in_game(gs, id));
 	return id;
 }
@@ -628,10 +628,14 @@ void mona_iterate(struct app_state *appstate) {
 		draw_player_hand(appstate, (enum player_id)i, mouse);
 		draw_place(appstate, (enum player_id)i);
 	}
+	const struct mona_state *gs = appstate->mona;
+	if (!gs->game_over && gs->deck_size == 0 &&
+	    gs->current_player != USER) {
+		draw_turn_arrow(appstate, gs->card_size, gs->current_player);
+	}
 	draw_flying(appstate);
 	draw_discard_flying(appstate);
 	draw_actions(appstate);
-	const struct mona_state *gs = appstate->mona;
 	if (gs->showing_discard) {
 		draw_discard_spread(appstate, gs->card_size, gs->discard,
 				    gs->discard_size, mouse);

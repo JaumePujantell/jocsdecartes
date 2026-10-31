@@ -358,8 +358,8 @@ static void score_round(struct setimig_state *gs) {
 
 static void end_turn(struct setimig_state *gs) {
 	for (unsigned i = 1; i <= NUM_PLAYERS; ++i) {
-		const enum player_id id = (enum player_id)(
-		    (gs->current_player + NUM_PLAYERS - i) % NUM_PLAYERS);
+		const enum player_id id =
+		    (enum player_id)((gs->current_player + i) % NUM_PLAYERS);
 		if (!gs->player[id].passed) {
 			gs->current_player = id;
 			return;
@@ -621,27 +621,8 @@ static void draw_wins(struct app_state *as, enum player_id id) {
 	const float first =
 	    half_hand + (STAR_GAP * gs->card_size.x) + (star_size / 2.F);
 	const SDL_FPoint center = seat_center(as, gs->card_size, id);
-	SDL_FPoint direction;
-	SDL_FPoint inward;
-	switch (id) {
-	case USER:
-		direction = (SDL_FPoint){1.F, 0.F};
-		inward = (SDL_FPoint){0.F, -1.F};
-		break;
-	case TOP_BOT:
-		direction = (SDL_FPoint){1.F, 0.F};
-		inward = (SDL_FPoint){0.F, 1.F};
-		break;
-	case LEFT_BOT:
-		direction = (SDL_FPoint){0.F, 1.F};
-		inward = (SDL_FPoint){1.F, 0.F};
-		break;
-	case RIGHT_BOT:
-	default:
-		direction = (SDL_FPoint){0.F, 1.F};
-		inward = (SDL_FPoint){-1.F, 0.F};
-		break;
-	}
+	const SDL_FPoint inward = seat_inward(id);
+	const SDL_FPoint direction = {SDL_fabsf(inward.y), SDL_fabsf(inward.x)};
 	static const float column_offsets[] = {0.F, 1.F, -1.F};
 	const unsigned stars_per_column = SDL_arraysize(column_offsets);
 	for (unsigned k = 0; k < player->wins; ++k) {
@@ -711,6 +692,11 @@ void setimig_iterate(struct app_state *appstate) {
 		draw_wins(appstate, (enum player_id)i);
 	}
 	draw_flying(appstate);
+	if (!appstate->setimig->revealed &&
+	    appstate->setimig->current_player != USER) {
+		draw_turn_arrow(appstate, appstate->setimig->card_size,
+				appstate->setimig->current_player);
+	}
 	if (user_is_choosing(appstate->setimig)) {
 		button_draw_choice(appstate, appstate->setimig->draw_button);
 		button_draw_choice(appstate, appstate->setimig->pass_button);

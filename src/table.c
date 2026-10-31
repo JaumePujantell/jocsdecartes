@@ -27,6 +27,9 @@
 #define LEFT_BOT_CARD_ANGLE QUARTER_TURN_ANGLE
 #define RIGHT_BOT_CARD_ANGLE (-QUARTER_TURN_ANGLE)
 
+#define TURN_ARROW_SIZE 0.25F
+#define TURN_ARROW_GAP 0.1F
+
 #define PILE_GAP 0.2F
 #define OPTION_ROW_WIDTH_FRACTION 0.8F
 #define OPTION_GAP_FRACTION 0.03F
@@ -163,6 +166,48 @@ SDL_FPoint seat_center(const struct app_state *as, SDL_FPoint card_size,
 		return (SDL_FPoint){window_width - from_edge,
 				    window_height / 2.F};
 	}
+}
+
+SDL_FPoint seat_inward(enum player_id id) {
+	switch (id) {
+	case USER:
+		return (SDL_FPoint){0.F, -1.F};
+	case TOP_BOT:
+		return (SDL_FPoint){0.F, 1.F};
+	case LEFT_BOT:
+		return (SDL_FPoint){1.F, 0.F};
+	case RIGHT_BOT:
+	default:
+		return (SDL_FPoint){-1.F, 0.F};
+	}
+}
+
+void draw_turn_arrow(struct app_state *as, SDL_FPoint card_size,
+		     enum player_id id) {
+	const SDL_FColor color = {(float)table_label_color.r / 255.F,
+				  (float)table_label_color.g / 255.F,
+				  (float)table_label_color.b / 255.F,
+				  (float)table_label_color.a / 255.F};
+	const float size = TURN_ARROW_SIZE * card_size.x;
+	const SDL_FPoint center = seat_center(as, card_size, id);
+	const SDL_FPoint inward = seat_inward(id);
+	const float tip_distance =
+	    (card_size.y / 2.F) + (TURN_ARROW_GAP * card_size.y);
+	const float base_distance = tip_distance + size;
+	const SDL_FPoint tip = {center.x + (inward.x * tip_distance),
+				center.y + (inward.y * tip_distance)};
+	const SDL_FPoint base = {center.x + (inward.x * base_distance),
+				 center.y + (inward.y * base_distance)};
+	const SDL_FPoint across = {-inward.y * size / 2.F,
+				   inward.x * size / 2.F};
+	const SDL_Vertex vertices[] = {
+	    {.position = tip, .color = color},
+	    {.position = {base.x + across.x, base.y + across.y},
+	     .color = color},
+	    {.position = {base.x - across.x, base.y - across.y},
+	     .color = color}};
+	SDL_RenderGeometry(as->renderer, NULL, vertices,
+			   (int)SDL_arraysize(vertices), NULL, 0);
 }
 
 static struct card_placement shown_hand_card(const struct app_state *as,
