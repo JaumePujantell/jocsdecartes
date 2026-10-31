@@ -15,6 +15,7 @@ void setimig_iterate(struct app_state *appstate);
 void setimig_resize(struct app_state *appstate);
 void setimig_restart(struct setimig_state *gamestate);
 void setimig_choose_options(struct setimig_state *gamestate);
+bool setimig_is_choosing_options(const struct setimig_state *gamestate);
 void setimig_leave(struct app_state *appstate);
 void setimig_quit(struct app_state *appstate);
 

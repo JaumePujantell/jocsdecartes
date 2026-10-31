@@ -2,30 +2,9 @@ cmake_minimum_required(VERSION 3.28)
 
 project(cardgame C)
 
-if (ANDROID)
-        # so much for system independence...
-        find_program(HOST_C_COMPILER NAMES cc gcc clang REQUIRED)
-        set(GENERATE_DECK_COMMAND "${CMAKE_CURRENT_BINARY_DIR}/generate_deck")
-        add_custom_command(
-                OUTPUT ${GENERATE_DECK_COMMAND}
-                COMMAND ${HOST_C_COMPILER} ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_deck.c -I ${CMAKE_CURRENT_SOURCE_DIR}/src -o ${GENERATE_DECK_COMMAND}
-                DEPENDS tools/generate_deck.c src/cards.h
-                VERBATIM
-        )
-        set(GENERATE_DECK_DEPENDS ${GENERATE_DECK_COMMAND})
-else ()
-        add_executable(generate_deck "tools/generate_deck.c")
-        target_include_directories(generate_deck PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-        set(GENERATE_DECK_COMMAND $<TARGET_FILE:generate_deck>)
-        set(GENERATE_DECK_DEPENDS generate_deck)
+if (MSVC)
+        add_compile_options(/utf-8)
 endif()
-
-add_custom_command(
-  OUTPUT deck.c
-  COMMAND ${GENERATE_DECK_COMMAND} > deck.c
-  DEPENDS ${GENERATE_DECK_DEPENDS}
-  VERBATIM
-)
 
 set(
   CMAKE_RUNTIME_OUTPUT_DIRECTORY
@@ -67,17 +46,28 @@ set(SDLIMAGE_SAMPLES OFF)
 set(SDLIMAGE_INSTALL OFF)
 include_dependency(SDL3_image https://github.com/libsdl-org/SDL_image.git release-3.4.8 3.4.0)
 
-set(CSourceFiles "src/app.c" "src/gui.c" "src/cards.c" "src/card_texture.c" "src/card_motion.c" "src/solitari.c" "src/setimig.c")
+set(CSourceFiles "src/app.c" "src/gui.c" "src/cards.c" "src/card_texture.c" "src/card_motion.c" "src/solitari.c" "src/setimig.c" "src/table.c" "src/mona.c")
 
 set(TARGET_NAME ${PROJECT_NAME})
 if (ANDROID)
-        add_library(main SHARED ${CSourceFiles} deck.c)
+        add_library(main SHARED ${CSourceFiles})
         set(TARGET_NAME main)
 else()
-        add_executable(${TARGET_NAME} ${CSourceFiles} deck.c)
+        add_executable(${TARGET_NAME} ${CSourceFiles})
 endif()
 
 target_include_directories(${TARGET_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+
+set_target_properties(${TARGET_NAME} PROPERTIES
+        C_STANDARD 17
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+)
+if (MSVC)
+        target_compile_options(${TARGET_NAME} PRIVATE /W4)
+else()
+        target_compile_options(${TARGET_NAME} PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+endif()
 
 add_custom_command(
         TARGET ${TARGET_NAME} POST_BUILD

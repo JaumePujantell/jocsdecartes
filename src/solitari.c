@@ -16,11 +16,6 @@
 #include "cards.h"
 #include "gui.h"
 
-struct mouse_state {
-	SDL_MouseButtonFlags flags;
-	SDL_FPoint pos;
-};
-
 struct deck_data {
 	card_t cards[SPANISH_DECK_SIZE];
 	SDL_FPoint position;
@@ -33,7 +28,6 @@ struct column_data {
 	SDL_FPoint position;
 	float margin;
 	unsigned num_cards;
-	unsigned num_draggable_cards;
 	unsigned num_receiving;
 	struct card_motion motion;
 };
@@ -70,6 +64,7 @@ static const SDL_Color deck_button_hover_color = {140, 220, 140,
 						  SDL_ALPHA_OPAQUE};
 
 #define NUM_COLUMNS 8U
+#define CARD_SHOW_MARGIN 0.2F
 
 struct solitari_state {
 	struct deck_data deck;
@@ -82,7 +77,30 @@ struct solitari_state {
 
 static bool card_fits_on_card(card_t card, card_t target) {
 	return (card & VAL_MASK) + 1 == (target & VAL_MASK) &&
-	       compare_suit(card, target) == -1;
+	       is_short_suit(card) != is_short_suit(target);
+}
+
+static SDL_FRect card_rect(const struct solitari_state *gs,
+			   SDL_FPoint position) {
+	return (SDL_FRect){.x = position.x,
+			   .y = position.y,
+			   .w = gs->card_size.x,
+			   .h = gs->card_size.y};
+}
+
+static SDL_FRect column_rect(const struct solitari_state *gs,
+			     const struct column_data *column) {
+	const unsigned n = column->num_cards == 0 ? 1 : column->num_cards;
+	SDL_FRect rect = card_rect(gs, column->position);
+	rect.h += (float)(n - 1) * column->margin;
+	return rect;
+}
+
+static SDL_FPoint drag_position(const struct solitari_state *gs,
+				SDL_FPoint point) {
+	const float margin = CARD_SHOW_MARGIN * gs->card_size.x;
+	return (SDL_FPoint){point.x - (gs->card_size.x / 2.F),
+			    point.y - (margin / 2.F)};
 }
 
 static SDL_FPoint first_receiving_position(const struct column_data *column) {
@@ -95,25 +113,14 @@ static SDL_FPoint first_receiving_position(const struct column_data *column) {
 
 static void deal_cards(struct solitari_state *gs) {
 	for (unsigned i = 0; i < NUM_COLUMNS && gs->deck.num_cards > 0; ++i) {
-		card_t *col_cards = gs->column[i].cards;
-		col_cards[gs->column[i].num_cards] =
-		    gs->deck.cards[gs->deck.num_cards - 1];
-		++gs->column[i].num_cards;
+		struct column_data *column = &gs->column[i];
 		--gs->deck.num_cards;
-		if (gs->column[i].num_cards == 1) {
-			gs->column[i].num_draggable_cards = 1;
-		} else {
-			card_t a = col_cards[gs->column[i].num_cards - 1];
-			card_t b = col_cards[gs->column[i].num_cards - 2];
-			if (card_fits_on_card(a, b)) {
-				++gs->column[i].num_draggable_cards;
-			} else {
-				gs->column[i].num_draggable_cards = 1;
-			}
-		}
-		gs->column[i].num_receiving = 1;
-		card_motion_start(&gs->column[i].motion, gs->deck.position, 0.0,
-				  first_receiving_position(&gs->column[i]),
+		column->cards[column->num_cards] =
+		    gs->deck.cards[gs->deck.num_cards];
+		++column->num_cards;
+		column->num_receiving = 1;
+		card_motion_start(&column->motion, gs->deck.position, 0.0,
+				  first_receiving_position(column),
 				  gs->card_size.x, CARD_FLIGHT_MS);
 	}
 }
@@ -122,10 +129,8 @@ static void deck_button_clicked(void *userdata) {
 	deal_cards((struct solitari_state *)userdata);
 }
 
-#define CARD_SHOW_MARGIN 0.2F
-
 void solitari_restart(struct solitari_state *gamestate) {
-	SDL_memcpy(gamestate->deck.cards, SPANISH_DECK, sizeof(SPANISH_DECK));
+	fill_spanish_deck(gamestate->deck.cards);
 	gamestate->deck.num_cards = SPANISH_DECK_SIZE;
 	shuffle(gamestate->deck.cards, SPANISH_DECK_SIZE);
 	float margin = CARD_SHOW_MARGIN * gamestate->card_size.x;
@@ -197,11 +202,10 @@ void solitari_resize(struct app_state *appstate) {
 
 bool solitari_init(struct app_state *appstate) {
 	struct gui_state *guistate = appstate->gui;
-	struct solitari_state *gs = SDL_malloc(sizeof(*gs));
+	struct solitari_state *gs = SDL_calloc(1, sizeof(*gs));
 	if (!gs) {
 		return false;
 	}
-	SDL_memset(gs, 0, sizeof(*gs));
 
 	gs->deck.draw_button =
 	    button_init(guistate, "Roba", deck_button_clicked, gs);
@@ -216,23 +220,15 @@ bool solitari_init(struct app_state *appstate) {
 	return true;
 }
 
-static void update_num_draggable_cards(struct column_data *column) {
-	if (column->num_draggable_cards != 0) {
-		return;
+static unsigned num_draggable_cards(const struct column_data *column) {
+	const card_t *cards = column->cards;
+	unsigned n = column->num_cards == 0 ? 0 : 1;
+	while (n < column->num_cards &&
+	       card_fits_on_card(cards[column->num_cards - n],
+				 cards[column->num_cards - n - 1])) {
+		++n;
 	}
-	if (column->num_cards < 2) {
-		column->num_draggable_cards = column->num_cards;
-		return;
-	}
-	unsigned nd = 1;
-	for (unsigned j = column->num_cards - 1; j > 0; --j) {
-		if (card_fits_on_card(column->cards[j], column->cards[j - 1])) {
-			++nd;
-		} else {
-			break;
-		}
-	}
-	column->num_draggable_cards = nd;
+	return n;
 }
 
 static bool card_fits_on_bank(card_t bank_top, card_t card) {
@@ -240,38 +236,40 @@ static bool card_fits_on_bank(card_t bank_top, card_t card) {
 	       bank_top + 1 == card;
 }
 
+static unsigned card_index_at(const struct column_data *column,
+			      const SDL_FPoint *p) {
+	const unsigned last = column->num_cards - 1;
+	const float strip =
+	    floorf((p->y - column->position.y) / column->margin);
+	if (strip <= 0.F) {
+		return 0;
+	}
+	return strip >= (float)last ? last : (unsigned)strip;
+}
+
 static void start_drag(struct solitari_state *gs, unsigned i,
 		       const SDL_FPoint *p) {
-	if (gs->delayed_dragging.delay_started) {
-		gs->delayed_dragging.delay_started = 0;
-	}
+	gs->delayed_dragging.delay_started = 0;
 	struct column_data *column = &gs->column[i];
 	struct dragging_data *dragging = &gs->dragging;
-	if (card_motion_is_moving(&column->motion)) {
+	if (column->num_cards == 0 || card_motion_is_moving(&column->motion)) {
 		return;
 	}
-	int n = (int)floorf((p->y - column->position.y) / column->margin);
-	if (n >= (int)column->num_cards) {
-		n = (int)column->num_cards - 1;
-	}
-	if (column->num_cards - n > column->num_draggable_cards) {
+	const unsigned n = card_index_at(column, p);
+	if (column->num_cards - n > num_draggable_cards(column)) {
 		return;
 	}
 	dragging->num_cards = column->num_cards - n;
 	dragging->position.x = column->position.x;
 	dragging->position.y = column->position.y + ((float)n * column->margin);
-	const float margin = CARD_SHOW_MARGIN * gs->card_size.x;
-	const SDL_FPoint target = {p->x - (gs->card_size.x / 2.F),
-				   p->y - (margin / 2.F)};
-	card_motion_start(&dragging->motion, dragging->position, 0.0, target,
-			  gs->card_size.x, DRAG_CATCH_UP_MS);
+	card_motion_start(&dragging->motion, dragging->position, 0.0,
+			  drag_position(gs, *p), gs->card_size.x,
+			  DRAG_CATCH_UP_MS);
 	column->num_cards = n;
 	for (unsigned j = 0; j < dragging->num_cards; ++j) {
 		dragging->cards[j] = column->cards[n + j];
 	}
 	dragging->orig_column = i;
-	column->num_draggable_cards -= dragging->num_cards;
-	update_num_draggable_cards(column);
 }
 
 static void start_drag_delayed(struct solitari_state *gs, unsigned i,
@@ -283,9 +281,7 @@ static void start_drag_delayed(struct solitari_state *gs, unsigned i,
 
 static bool is_bottom_card_click(const struct column_data *column,
 				 const SDL_FPoint *p) {
-	unsigned n =
-	    (unsigned)floorf((p->y - column->position.y) / column->margin);
-	return n >= column->num_cards - 1;
+	return card_index_at(column, p) == column->num_cards - 1;
 }
 
 static bool try_move_bottom_card_to_bank(struct solitari_state *gs,
@@ -315,10 +311,6 @@ static bool try_move_bottom_card_to_bank(struct solitari_state *gs,
 				card_motion_stop(&column->motion);
 			}
 		}
-		if (column->num_draggable_cards > 0) {
-			--column->num_draggable_cards;
-		}
-		update_num_draggable_cards(column);
 		return true;
 	}
 	return false;
@@ -327,16 +319,14 @@ static bool try_move_bottom_card_to_bank(struct solitari_state *gs,
 static bool drop_on_bank(struct solitari_state *gs, const SDL_FPoint *p,
 			 SDL_FPoint drop_position) {
 	const card_t dc = gs->dragging.cards[0];
-	SDL_FRect r = {.w = gs->card_size.x, .h = gs->card_size.y};
 	for (unsigned i = 0; i < NUM_SUITS; ++i) {
 		struct bank_data *bank = &gs->bank[i];
 		if (card_motion_is_moving(&bank->motion) ||
 		    !card_fits_on_bank(bank->top_card, dc)) {
 			continue;
 		}
-		r.x = bank->position.x;
-		r.y = bank->position.y;
-		if (SDL_PointInRectFloat(p, &r)) {
+		const SDL_FRect rect = card_rect(gs, bank->position);
+		if (SDL_PointInRectFloat(p, &rect)) {
 			bank->top_card_receiving = dc;
 			card_motion_start(&bank->motion, drop_position, 0.0,
 					  bank->position, gs->card_size.x,
@@ -349,20 +339,15 @@ static bool drop_on_bank(struct solitari_state *gs, const SDL_FPoint *p,
 
 static unsigned drop_column(const struct solitari_state *gs,
 			    const SDL_FPoint *p) {
-	SDL_FRect r = {.w = gs->card_size.x};
 	for (unsigned i = 0; i < NUM_COLUMNS; ++i) {
 		const struct column_data *column = &gs->column[i];
-		const unsigned n =
-		    column->num_cards == 0 ? 1 : column->num_cards;
-		r.x = column->position.x;
-		r.y = column->position.y;
-		r.h = gs->card_size.y + ((float)(n - 1) * column->margin);
-		if (!SDL_PointInRectFloat(p, &r)) {
+		const SDL_FRect rect = column_rect(gs, column);
+		if (!SDL_PointInRectFloat(p, &rect)) {
 			continue;
 		}
 		if (column->num_cards == 0 ||
 		    card_fits_on_card(gs->dragging.cards[0],
-				      column->cards[n - 1])) {
+				      column->cards[column->num_cards - 1])) {
 			return i;
 		}
 		break;
@@ -372,14 +357,9 @@ static unsigned drop_column(const struct solitari_state *gs,
 
 static void end_drag(struct solitari_state *gs, const SDL_FPoint *p) {
 	const unsigned num_cards = gs->dragging.num_cards;
-	const float margin = CARD_SHOW_MARGIN * gs->card_size.x;
-	SDL_FPoint drop_position;
-	if (card_motion_is_moving(&gs->dragging.motion)) {
-		drop_position = gs->dragging.position;
-	} else {
-		drop_position.x = p->x - (gs->card_size.x / 2.F);
-		drop_position.y = p->y - (margin / 2.F);
-	}
+	const SDL_FPoint drop_position =
+	    card_motion_is_moving(&gs->dragging.motion) ? gs->dragging.position
+							: drag_position(gs, *p);
 	gs->dragging.num_cards = 0;
 	if (num_cards == 1 && drop_on_bank(gs, p, drop_position)) {
 		return;
@@ -388,12 +368,6 @@ static void end_drag(struct solitari_state *gs, const SDL_FPoint *p) {
 	const unsigned n = column->num_cards;
 	for (unsigned i = 0; i < num_cards; ++i) {
 		column->cards[n + i] = gs->dragging.cards[i];
-	}
-	if (n != 0 &&
-	    card_fits_on_card(column->cards[n], column->cards[n - 1])) {
-		column->num_draggable_cards += num_cards;
-	} else {
-		column->num_draggable_cards = num_cards;
 	}
 	column->num_cards += num_cards;
 	column->num_receiving = num_cards;
@@ -419,17 +393,13 @@ static void mouse_button_down(struct solitari_state *gs,
 		return;
 	}
 	const SDL_FPoint p = {event->button.x, event->button.y};
-	SDL_FRect r = {.w = gs->card_size.x};
 	for (unsigned i = 0; i < NUM_COLUMNS; ++i) {
 		const struct column_data *column = &gs->column[i];
 		if (column->num_cards == 0) {
 			continue;
 		}
-		r.x = column->position.x;
-		r.y = column->position.y;
-		r.h = gs->card_size.y +
-		      ((float)(column->num_cards - 1) * column->margin);
-		if (SDL_PointInRectFloat(&p, &r)) {
+		const SDL_FRect rect = column_rect(gs, column);
+		if (SDL_PointInRectFloat(&p, &rect)) {
 			click_column(gs, i, &p, event->button.clicks);
 			return;
 		}
@@ -483,11 +453,8 @@ void solitari_event(struct app_state *appstate, SDL_Event *event) {
 }
 
 static void draw_deck(struct app_state *as, struct solitari_state *gs,
-		      const struct mouse_state *mouse) {
-	SDL_FRect dest_rect = {.x = gs->deck.position.x,
-			       .y = gs->deck.position.y,
-			       .w = gs->card_size.x,
-			       .h = gs->card_size.y};
+		      SDL_FPoint mouse) {
+	const SDL_FRect dest_rect = card_rect(gs, gs->deck.position);
 	card_texture_draw(as->card_texture,
 			  gs->deck.num_cards == 0 ? CARD_OUTLINE : CARD_BACK,
 			  &dest_rect);
@@ -495,7 +462,7 @@ static void draw_deck(struct app_state *as, struct solitari_state *gs,
 	if (gs->deck.num_cards == 0) {
 		color = deck_empty_color;
 	} else if (gs->dragging.num_cards == 0 &&
-		   button_is_hovered(gs->deck.draw_button, mouse->pos)) {
+		   button_is_hovered(gs->deck.draw_button, mouse)) {
 		color = button_is_pressing(gs->deck.draw_button)
 			    ? green_button_pressed_color
 			    : deck_button_hover_color;
@@ -526,12 +493,9 @@ static void update_floating(struct solitari_state *gs, SDL_FPoint mouse_pos,
 	if (dragging->num_cards == 0) {
 		return;
 	}
-	const float margin = CARD_SHOW_MARGIN * gs->card_size.x;
-	const SDL_FPoint target = {mouse_pos.x - (gs->card_size.x / 2.F),
-				   mouse_pos.y - (margin / 2.F)};
 	card_motion_arrived(&dragging->motion, now);
-	dragging->position =
-	    card_motion_position(&dragging->motion, target, now);
+	dragging->position = card_motion_position(
+	    &dragging->motion, drag_position(gs, mouse_pos), now);
 }
 
 static void solitari_update(struct app_state *appstate, SDL_FPoint mouse_pos) {
@@ -554,13 +518,10 @@ static void solitari_update(struct app_state *appstate, SDL_FPoint mouse_pos) {
 }
 
 static void draw_column(struct app_state *as, struct solitari_state *gs,
-			unsigned i, const struct mouse_state *mouse) {
+			unsigned i, SDL_FPoint mouse) {
 	struct column_data *column = &gs->column[i];
 	const unsigned n = column->num_cards;
-	SDL_FRect dest_rect = {.x = column->position.x,
-			       .y = column->position.y,
-			       .w = gs->card_size.x,
-			       .h = gs->card_size.y};
+	SDL_FRect dest_rect = card_rect(gs, column->position);
 	SDL_FRect visible_rect = {
 	    .x = column->position.x, .w = gs->card_size.x, .h = column->margin};
 	if (n == 0 || n == column->num_receiving) {
@@ -578,9 +539,9 @@ static void draw_column(struct app_state *as, struct solitari_state *gs,
 		card_texture_draw(as->card_texture, column->cards[j],
 				  &dest_rect);
 		visible_rect.y = dest_rect.y;
-		if (column->num_receiving == 0 && mouse && j < n - 1 &&
+		if (column->num_receiving == 0 && j < n - 1 &&
 		    gs->dragging.num_cards == 0 &&
-		    SDL_PointInRectFloat(&mouse->pos, &visible_rect)) {
+		    SDL_PointInRectFloat(&mouse, &visible_rect)) {
 			draw_extra = true;
 			draw_extra_card = column->cards[j];
 			draw_extra_dest = dest_rect;
@@ -601,11 +562,7 @@ static void draw_column_receiving(struct app_state *as,
 	const SDL_FPoint position = card_motion_position(
 	    &column->motion, first_receiving_position(column),
 	    as->current_frame_ticks);
-	SDL_FRect dest_rect = {.x = position.x,
-			       .y = position.y,
-			       .w = gs->card_size.x,
-			       .h = gs->card_size.y};
-
+	SDL_FRect dest_rect = card_rect(gs, position);
 	for (unsigned j = first_receiving; j < n; ++j) {
 		card_texture_draw(as->card_texture, column->cards[j],
 				  &dest_rect);
@@ -616,10 +573,7 @@ static void draw_column_receiving(struct app_state *as,
 static void draw_bank(struct app_state *as, struct solitari_state *gs,
 		      unsigned i) {
 	struct bank_data *bank = &gs->bank[i];
-	SDL_FRect dest_rect = {.x = bank->position.x,
-			       .y = bank->position.y,
-			       .w = gs->card_size.x,
-			       .h = gs->card_size.y};
+	const SDL_FRect dest_rect = card_rect(gs, bank->position);
 	const card_t c = bank->top_card;
 	card_texture_draw(as->card_texture, c == 0 ? CARD_OUTLINE : c,
 			  &dest_rect);
@@ -630,10 +584,7 @@ static void draw_bank_receiving(struct app_state *as, struct solitari_state *gs,
 	struct bank_data *bank = &gs->bank[i];
 	const SDL_FPoint position = card_motion_position(
 	    &bank->motion, bank->position, as->current_frame_ticks);
-	SDL_FRect dest_rect = {.x = position.x,
-			       .y = position.y,
-			       .w = gs->card_size.x,
-			       .h = gs->card_size.y};
+	const SDL_FRect dest_rect = card_rect(gs, position);
 	card_texture_draw(as->card_texture, bank->top_card_receiving,
 			  &dest_rect);
 }
@@ -641,9 +592,7 @@ static void draw_bank_receiving(struct app_state *as, struct solitari_state *gs,
 static void draw_floating(struct app_state *as, struct solitari_state *gs) {
 	const unsigned n = gs->dragging.num_cards;
 	const float margin = CARD_SHOW_MARGIN * gs->card_size.x;
-	SDL_FRect dest_rect = {.x = gs->dragging.position.x,
-			       .w = gs->card_size.x,
-			       .h = gs->card_size.y};
+	SDL_FRect dest_rect = card_rect(gs, gs->dragging.position);
 	for (unsigned j = 0; j < n; ++j) {
 		dest_rect.y = gs->dragging.position.y + (margin * (float)j);
 		card_texture_draw(as->card_texture, gs->dragging.cards[j],
@@ -653,12 +602,12 @@ static void draw_floating(struct app_state *as, struct solitari_state *gs) {
 
 void solitari_iterate(struct app_state *appstate) {
 	struct solitari_state *gamestate = appstate->solitari;
-	struct mouse_state mouse;
-	mouse.flags = SDL_GetMouseState(&mouse.pos.x, &mouse.pos.y);
-	solitari_update(appstate, mouse.pos);
-	draw_deck(appstate, gamestate, &mouse);
+	SDL_FPoint mouse;
+	SDL_GetMouseState(&mouse.x, &mouse.y);
+	solitari_update(appstate, mouse);
+	draw_deck(appstate, gamestate, mouse);
 	for (unsigned i = 0; i < NUM_COLUMNS; ++i) {
-		draw_column(appstate, gamestate, i, &mouse);
+		draw_column(appstate, gamestate, i, mouse);
 	}
 	for (unsigned i = 0; i < NUM_SUITS; ++i) {
 		draw_bank(appstate, gamestate, i);

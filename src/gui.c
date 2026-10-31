@@ -51,12 +51,14 @@ struct gui_state {
 	struct button *main_menu_button;
 	struct button *quit_button;
 	bool app_menu_open;
+	int app_menu_window_side;
+	int app_menu_icon_pixels;
 };
 
 #define MAX_APP_MENU_OPTIONS 3
-#define APP_MENU_MARGIN 10.F
-#define APP_MENU_BUTTON_WIDTH 140.F
-#define MENU_ICON_SIZE 40.F
+#define APP_MENU_MARGIN_FRACTION 0.02F
+#define APP_MENU_BUTTON_WIDTH_FRACTION 0.32F
+#define MENU_ICON_SIZE_FRACTION 0.1F
 #define DEFAULT_FONT_SIZE 14.F
 #define LABEL_CORNER_RADIUS 0.3F
 
@@ -79,8 +81,10 @@ get_visible_app_menu_buttons(struct app_state *as,
 			     unsigned *count) {
 	unsigned n = 0;
 	struct gui_state *gs = as->gui;
-	if (as->current_game != NO_GAME) {
+	if (current_game_can_restart(as)) {
 		buttons[n++] = gs->new_game_button;
+	}
+	if (as->current_game != NO_GAME) {
 		buttons[n++] = gs->main_menu_button;
 	}
 	buttons[n++] = gs->quit_button;
@@ -88,22 +92,25 @@ get_visible_app_menu_buttons(struct app_state *as,
 }
 
 static void position_app_menu(struct app_state *as) {
-	const float margin = APP_MENU_MARGIN;
-	const float window_width = (float)as->window_size.x;
+	SDL_Rect safe_area;
+	SDL_GetWindowSafeArea(as->window, &safe_area);
+	const float margin = SDL_roundf((float)as->gui->app_menu_window_side *
+					APP_MENU_MARGIN_FRACTION);
+	const float right = (float)(safe_area.x + safe_area.w);
+	const float top = (float)safe_area.y;
 	struct gui_state *gs = as->gui;
 	SDL_FPoint burger_size = button_get_size(gs->burger_button);
-	button_set_position(gs->burger_button,
-			    window_width - burger_size.x - margin, margin);
+	button_set_position(gs->burger_button, right - burger_size.x - margin,
+			    top + margin);
 
 	struct button *visible[MAX_APP_MENU_OPTIONS];
 	unsigned count;
 	get_visible_app_menu_buttons(as, visible, &count);
 
-	float y = margin + burger_size.y + margin;
+	float y = top + margin + burger_size.y + margin;
 	for (unsigned i = 0; i < count; ++i) {
 		SDL_FPoint size = button_get_size(visible[i]);
-		button_set_position(visible[i], window_width - size.x - margin,
-				    y);
+		button_set_position(visible[i], right - size.x - margin, y);
 		y += size.y + margin;
 	}
 }
@@ -111,6 +118,9 @@ static void position_app_menu(struct app_state *as) {
 static void toggle_app_menu(void *userdata) {
 	struct app_state *as = (struct app_state *)userdata;
 	as->gui->app_menu_open = !as->gui->app_menu_open;
+	if (as->gui->app_menu_open && as->gui->focused_input) {
+		input_unfocus(as, as->gui->focused_input);
+	}
 }
 
 static void restart_current_game_callback(void *userdata) {
@@ -132,10 +142,7 @@ static void quit_app(void *userdata) {
 }
 
 static SDL_Point size_in_pixels(struct app_state *as, float w, float h) {
-	float density = SDL_GetWindowPixelDensity(as->window);
-	if (density <= 0.F) {
-		density = 1.F;
-	}
+	const float density = window_pixel_density(as);
 	return (SDL_Point){(int)SDL_ceilf(w * density),
 			   (int)SDL_ceilf(h * density)};
 }
@@ -186,7 +193,8 @@ static SDL_Texture *create_label_background(struct app_state *as, float w,
 	    "<rect x='0.5' y='0.5' width='%g' height='%g' rx='%g' ry='%g' "
 	    "fill='url(#shade)' stroke='#000000' stroke-opacity='0.3' "
 	    "stroke-width='1'/></svg>",
-	    w, h, w - 1.F, h - 1.F, radius, radius);
+	    (double)w, (double)h, (double)(w - 1.F), (double)(h - 1.F),
+	    (double)radius, (double)radius);
 	if (!svg) {
 		return NULL;
 	}
@@ -233,12 +241,46 @@ static const SDL_FRect *button_const_rect(const struct button *button) {
 	return button->label ? &button->label->rect : &button->icon_rect;
 }
 
+static bool fit_app_menu(struct app_state *as) {
+	struct gui_state *gs = as->gui;
+	const int window_side = SDL_min(as->window_size.x, as->window_size.y);
+	const float icon_size =
+	    SDL_roundf((float)window_side * MENU_ICON_SIZE_FRACTION);
+	const int icon_pixels = size_in_pixels(as, icon_size, icon_size).x;
+	if (window_side == gs->app_menu_window_side &&
+	    icon_pixels == gs->app_menu_icon_pixels) {
+		return true;
+	}
+
+	struct button *options[] = {gs->new_game_button, gs->main_menu_button,
+				    gs->quit_button};
+	button_group_fit_width(options, SDL_arraysize(options),
+			       (float)window_side *
+				   APP_MENU_BUTTON_WIDTH_FRACTION);
+
+	SDL_Texture *icon =
+	    load_svg_texture(as, "menu.svg", icon_size, icon_size);
+	if (!icon) {
+		return false;
+	}
+	struct button *burger = gs->burger_button;
+	if (burger->icon) {
+		SDL_DestroyTexture(burger->icon);
+	}
+	burger->icon = icon;
+	burger->icon_rect.w = icon_size;
+	burger->icon_rect.h = icon_size;
+
+	gs->app_menu_window_side = window_side;
+	gs->app_menu_icon_pixels = icon_pixels;
+	return true;
+}
+
 bool gui_init(struct app_state *appstate) {
-	struct gui_state *gs = SDL_malloc(sizeof(*gs));
+	struct gui_state *gs = SDL_calloc(1, sizeof(*gs));
 	if (!gs) {
 		return false;
 	}
-	SDL_memset(gs, 0, sizeof(*gs));
 	appstate->gui = gs;
 
 	gs->text_engine = TTF_CreateRendererTextEngine(appstate->renderer);
@@ -257,27 +299,20 @@ bool gui_init(struct app_state *appstate) {
 		return false;
 	}
 
-	SDL_Texture *menu_icon = load_svg_texture(
-	    appstate, "menu.svg", MENU_ICON_SIZE, MENU_ICON_SIZE);
-	if (!menu_icon) {
-		return false;
-	}
 	gs->burger_button =
-	    button_init_icon(menu_icon, MENU_ICON_SIZE, MENU_ICON_SIZE,
-			     toggle_app_menu, appstate);
+	    button_init_icon(NULL, 0.F, 0.F, toggle_app_menu, appstate);
 	if (!gs->burger_button) {
-		SDL_DestroyTexture(menu_icon);
 		return false;
 	}
 
 	gs->new_game_button = button_init(
-	    gs, u8"Comença de nou", restart_current_game_callback, appstate);
+	    gs, "Comença de nou", restart_current_game_callback, appstate);
 	if (!gs->new_game_button) {
 		return false;
 	}
 
 	gs->main_menu_button =
-	    button_init(gs, u8"Menú principal", go_to_main_menu, appstate);
+	    button_init(gs, "Menú principal", go_to_main_menu, appstate);
 	if (!gs->main_menu_button) {
 		return false;
 	}
@@ -287,11 +322,9 @@ bool gui_init(struct app_state *appstate) {
 		return false;
 	}
 
-	struct button *options[] = {gs->new_game_button, gs->main_menu_button,
-				    gs->quit_button};
-	button_group_fit_width(options, SDL_arraysize(options),
-			       APP_MENU_BUTTON_WIDTH);
-
+	if (!fit_app_menu(appstate)) {
+		return false;
+	}
 	position_app_menu(appstate);
 
 	return true;
@@ -329,6 +362,7 @@ bool gui_event(struct app_state *appstate, SDL_Event *event) {
 }
 
 void gui_iterate(struct app_state *appstate) {
+	fit_app_menu(appstate);
 	position_app_menu(appstate);
 	struct button *burger = appstate->gui->burger_button;
 	button_draw(appstate, burger,
@@ -370,11 +404,10 @@ void gui_quit(struct gui_state *guistate) {
 }
 
 struct label *label_init(struct gui_state *guistate, const char *text) {
-	struct label *label = SDL_malloc(sizeof(*label));
+	struct label *label = SDL_calloc(1, sizeof(*label));
 	if (!label) {
 		return NULL;
 	}
-	SDL_memset(label, 0, sizeof(*label));
 
 	label->font = TTF_CopyFont(guistate->font);
 	if (!label->font) {
@@ -457,7 +490,7 @@ void label_quit(struct label *label) {
 void label_fit_width(struct label *label, float target_width) {
 	SDL_FPoint size = padded_text_size(label);
 	float font_size = TTF_GetFontSize(label->font);
-	float old_w = 0.F;
+	long previous_width = 0;
 	for (int round = 0;
 	     round < LABEL_FIT_MAX_ROUNDS && target_width > 0 && size.x > 0 &&
 	     SDL_fabsf(size.x - target_width) > 1.F;
@@ -465,10 +498,11 @@ void label_fit_width(struct label *label, float target_width) {
 		font_size *= target_width / size.x;
 		label_set_font_size(label, font_size);
 		size = padded_text_size(label);
-		if (size.x == old_w) {
+		const long width = SDL_lroundf(size.x);
+		if (width == previous_width) {
 			break;
 		}
-		old_w = size.x;
+		previous_width = width;
 	}
 	label_set_font_size(label, font_size);
 }
@@ -502,6 +536,7 @@ SDL_FPoint label_get_size(const struct label *label) {
 	return (SDL_FPoint){label->rect.w, label->rect.h};
 }
 
+#if SDL_ASSERT_LEVEL >= 2
 static bool is_whole_number(const char *text) {
 	for (const char *c = text; *c; ++c) {
 		if (!SDL_isdigit((unsigned char)*c)) {
@@ -510,15 +545,17 @@ static bool is_whole_number(const char *text) {
 	}
 	return true;
 }
+#endif
 
 struct input *input_init(struct gui_state *guistate, const char *text) {
+#if SDL_ASSERT_LEVEL >= 2
 	SDL_assert(is_whole_number(text) &&
 		   "the text of an input must contain only digits");
-	struct input *input = SDL_malloc(sizeof(*input));
+#endif
+	struct input *input = SDL_calloc(1, sizeof(*input));
 	if (!input) {
 		return NULL;
 	}
-	SDL_memset(input, 0, sizeof(*input));
 	input->label = label_init(guistate, text);
 	if (!input->label) {
 		SDL_free(input);
@@ -710,27 +747,16 @@ void input_set_font_size(struct app_state *appstate, struct input *input,
 	}
 }
 
-SDL_FPoint input_get_size(const struct input *input) {
-	return label_get_size(input->label);
-}
-
 const char *input_get_text(const struct input *input) {
-	/* SDL_ttf stores an empty text as a NULL string. */
 	const char *text = input->label->text->text;
 	return text ? text : "";
 }
 
-bool input_is_focused(const struct app_state *appstate,
-		      const struct input *input) {
-	return input_has_focus(appstate, input);
-}
-
 static struct button *button_alloc(button_callback on_click, void *userdata) {
-	struct button *button = SDL_malloc(sizeof(*button));
+	struct button *button = SDL_calloc(1, sizeof(*button));
 	if (!button) {
 		return NULL;
 	}
-	SDL_memset(button, 0, sizeof(*button));
 	button->on_click = on_click;
 	button->userdata = userdata;
 	return button;
@@ -807,6 +833,18 @@ void button_draw(struct app_state *appstate, struct button *button,
 	SDL_SetTextureAlphaMod(button->icon, color.a);
 	SDL_RenderTexture(appstate->renderer, button->icon, NULL,
 			  &button->icon_rect);
+}
+
+static const SDL_Color disabled_button_color = {170, 170, 170, 200};
+
+void button_draw_choice(struct app_state *appstate, struct button *button) {
+	SDL_Color color = button_is_pressing(button)
+			      ? green_button_pressed_color
+			      : green_button_color;
+	if (!button_is_enabled(button)) {
+		color = disabled_button_color;
+	}
+	button_draw(appstate, button, color);
 }
 
 void button_quit(struct button *button) {

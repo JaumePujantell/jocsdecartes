@@ -7,7 +7,6 @@
 #include <SDL3/SDL_render.h>
 #include <SDL3/SDL_stdinc.h>
 
-#include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -16,6 +15,7 @@
 #include "card_texture.h"
 #include "cards.h"
 #include "gui.h"
+#include "table.h"
 
 struct deck_data {
 	card_t cards[SMALL_SPANISH_DECK_SIZE];
@@ -35,19 +35,8 @@ struct player_data {
 	unsigned wins;
 };
 
-enum player_id { USER, LEFT_BOT, TOP_BOT, RIGHT_BOT, NUM_PLAYERS };
-
-struct flying_data {
-	enum player_id player;
-	struct card_motion motion;
-};
-
 #define CARD_FLIGHT_MS 300U
 
-#define MIN_PLAYERS 2U
-#define DEFAULT_PLAYERS_TEXT "4"
-
-#define NUM_OPTION_COLUMNS 3U
 #define DEFAULT_WINS_TEXT "5"
 
 struct setimig_state {
@@ -76,14 +65,6 @@ struct setimig_state {
 	struct button *new_game_button;
 };
 
-static unsigned players_in_input(const struct setimig_state *gs) {
-	const unsigned long players =
-	    SDL_strtoul(input_get_text(gs->players_input), NULL, 10);
-	return players >= MIN_PLAYERS && players <= NUM_PLAYERS
-		   ? (unsigned)players
-		   : 0;
-}
-
 static unsigned wins_needed(const struct setimig_state *gs) {
 	if (!gs->wins_limited) {
 		return 0;
@@ -91,18 +72,6 @@ static unsigned wins_needed(const struct setimig_state *gs) {
 	const unsigned long wins =
 	    SDL_strtoul(input_get_text(gs->wins_input), NULL, 10);
 	return (unsigned)SDL_min(wins, SDL_MAX_UINT32);
-}
-
-static bool player_is_active(const struct setimig_state *gs,
-			     enum player_id id) {
-	switch (gs->num_players) {
-	case 2:
-		return id == USER || id == TOP_BOT;
-	case 3:
-		return id != TOP_BOT;
-	default:
-		return true;
-	}
 }
 
 static void start_round(struct setimig_state *gamestate) {
@@ -114,8 +83,8 @@ static void start_round(struct setimig_state *gamestate) {
 		discard->num_cards += player->num_cards;
 		player->num_cards = 0;
 		player->num_receiving = 0;
-		player->passed =
-		    !player_is_active(gamestate, (enum player_id)i);
+		player->passed = !player_is_active(gamestate->num_players,
+						   (enum player_id)i);
 	}
 	card_motion_stop(&gamestate->flying.motion);
 	gamestate->current_player = USER;
@@ -124,15 +93,15 @@ static void start_round(struct setimig_state *gamestate) {
 
 static void start_game(struct setimig_state *gamestate) {
 	gamestate->choosing_options = false;
-	const unsigned players = players_in_input(gamestate);
+	gamestate->showing_discard = false;
+	const unsigned players = players_in_input(gamestate->players_input);
 	if (players != 0) {
 		gamestate->num_players = players;
 	}
 	if (wins_needed(gamestate) == 0) {
 		gamestate->wins_limited = false;
 	}
-	SDL_memcpy(gamestate->deck.cards, SMALL_SPANISH_DECK,
-		   sizeof(SMALL_SPANISH_DECK));
+	fill_small_spanish_deck(gamestate->deck.cards);
 	gamestate->deck.num_cards = SMALL_SPANISH_DECK_SIZE;
 	shuffle(gamestate->deck.cards, SMALL_SPANISH_DECK_SIZE);
 	gamestate->discard.num_cards = 0;
@@ -143,15 +112,15 @@ static void start_game(struct setimig_state *gamestate) {
 	start_round(gamestate);
 }
 
-void setimig_restart(struct setimig_state *gamestate) {
-	if (!gamestate->choosing_options) {
-		start_game(gamestate);
-	}
-}
+void setimig_restart(struct setimig_state *gamestate) { start_game(gamestate); }
 
 void setimig_choose_options(struct setimig_state *gamestate) {
 	gamestate->choosing_options = true;
 	gamestate->showing_discard = false;
+}
+
+bool setimig_is_choosing_options(const struct setimig_state *gamestate) {
+	return gamestate->choosing_options;
 }
 
 static void next_round_clicked(void *userdata) {
@@ -166,34 +135,20 @@ static void no_limit_clicked(void *userdata) {
 	((struct setimig_state *)userdata)->wins_limited = false;
 }
 
-#define CARD_WINDOW_HEIGHT_FRACTION 0.25F
-#define CARD_WINDOW_WIDTH_FRACTION 0.12F
-#define CARD_SHOW_MARGIN 0.25F
-#define OUTER_MARGIN 0.1F
-#define PILE_GAP 0.2F
 #define BUTTON_WIDTH_FRACTION 0.8F
 #define BUTTON_GAP 0.2F
 #define STAR_SIZE 0.2F
 #define STAR_GAP 0.1F
-#define OPTION_ROW_WIDTH_FRACTION 0.8F
-#define OPTION_GAP_FRACTION 0.03F
-#define DISCARD_SPREAD_WIDTH_FRACTION 0.9F
-#define DISCARD_ROW_GAP 0.1F
-
-#define LEFT_BOT_CARD_ANGLE 90.0
-#define RIGHT_BOT_CARD_ANGLE (-90.0)
 
 static void position_options(struct app_state *appstate) {
 	struct setimig_state *gs = appstate->setimig;
 	const float window_width = (float)appstate->window_size.x;
 	const float window_height = (float)appstate->window_size.y;
-	const float gap = OPTION_GAP_FRACTION * window_width;
+	const float gap = option_gap(appstate);
 	struct label *cells[] = {gs->players_caption, gs->wins_caption,
 				 button_get_label(gs->no_limit_button)};
 	label_group_fit_width(cells, SDL_arraysize(cells),
-			      ((OPTION_ROW_WIDTH_FRACTION * window_width) -
-			       ((float)(NUM_OPTION_COLUMNS - 1) * gap)) /
-				  (float)NUM_OPTION_COLUMNS);
+			      option_column_width(appstate));
 	const SDL_FPoint choice_size = button_get_size(gs->no_limit_button);
 	const float font_size = button_get_font_size(gs->no_limit_button);
 	struct input *inputs[] = {gs->players_input, gs->wins_input};
@@ -247,13 +202,7 @@ static void position_game_over(struct app_state *appstate, float width,
 
 void setimig_resize(struct app_state *appstate) {
 	struct setimig_state *gs = appstate->setimig;
-	const float card_ratio =
-	    card_texture_aspect_ratio(appstate->card_texture);
-	gs->card_size.x =
-	    fminf((float)appstate->window_size.x * CARD_WINDOW_WIDTH_FRACTION,
-		  (float)appstate->window_size.y * CARD_WINDOW_HEIGHT_FRACTION *
-		      card_ratio);
-	gs->card_size.y = gs->card_size.x / card_ratio;
+	gs->card_size = table_card_size(appstate);
 
 	const float button_width = BUTTON_WIDTH_FRACTION * gs->card_size.x;
 	const float gap = BUTTON_GAP * gs->card_size.x;
@@ -283,22 +232,20 @@ void setimig_resize(struct app_state *appstate) {
 
 #define NUM_BUTTONS 6U
 
-static unsigned all_buttons(struct setimig_state *gs,
-			    struct button *buttons[NUM_BUTTONS]) {
-	unsigned n = 0;
-	buttons[n++] = gs->draw_button;
-	buttons[n++] = gs->pass_button;
-	buttons[n++] = gs->next_round_button;
-	buttons[n++] = gs->start_button;
-	buttons[n++] = gs->new_game_button;
-	buttons[n++] = gs->no_limit_button;
-	return n;
+static void all_buttons(struct setimig_state *gs,
+			struct button *buttons[NUM_BUTTONS]) {
+	struct button *const list[NUM_BUTTONS] = {
+	    gs->draw_button,  gs->pass_button,	   gs->next_round_button,
+	    gs->start_button, gs->new_game_button, gs->no_limit_button};
+	for (unsigned i = 0; i < NUM_BUTTONS; ++i) {
+		buttons[i] = list[i];
+	}
 }
 
 static void quit_gui(struct app_state *appstate, struct setimig_state *gs) {
 	struct button *buttons[NUM_BUTTONS];
-	const unsigned count = all_buttons(gs, buttons);
-	for (unsigned i = 0; i < count; ++i) {
+	all_buttons(gs, buttons);
+	for (unsigned i = 0; i < NUM_BUTTONS; ++i) {
 		if (buttons[i]) {
 			button_quit(buttons[i]);
 		}
@@ -353,11 +300,10 @@ static bool init_buttons_and_labels(struct app_state *appstate,
 }
 
 bool setimig_init(struct app_state *appstate) {
-	struct setimig_state *gs = SDL_malloc(sizeof(*gs));
+	struct setimig_state *gs = SDL_calloc(1, sizeof(*gs));
 	if (!gs) {
 		return false;
 	}
-	SDL_memset(gs, 0, sizeof(*gs));
 	gs->num_players = NUM_PLAYERS;
 	gs->wins_limited = false;
 	if (!init_buttons_and_labels(appstate, gs)) {
@@ -372,124 +318,12 @@ bool setimig_init(struct app_state *appstate) {
 	return true;
 }
 
-struct card_placement {
-	SDL_FRect rect;
-	double angle;
-};
-
-static float hand_length(const struct setimig_state *gs, unsigned n) {
-	return gs->card_size.x +
-	       ((float)(n - 1) * CARD_SHOW_MARGIN * gs->card_size.x);
-}
-
-static struct card_placement turned_card(const struct setimig_state *gs,
-					 float left, float top, double angle) {
-	return (struct card_placement){
-	    .rect = {.x = left + ((gs->card_size.y - gs->card_size.x) / 2.F),
-		     .y = top + ((gs->card_size.x - gs->card_size.y) / 2.F),
-		     .w = gs->card_size.x,
-		     .h = gs->card_size.y},
-	    .angle = angle};
-}
-
-static struct card_placement hand_card(const struct app_state *as,
-				       enum player_id id, unsigned j,
-				       unsigned n) {
-	const struct setimig_state *gs = as->setimig;
-	const float window_width = (float)as->window_size.x;
-	const float window_height = (float)as->window_size.y;
-	const float offset = (float)j * CARD_SHOW_MARGIN * gs->card_size.x;
-	const float outer_margin = OUTER_MARGIN * gs->card_size.y;
-	const float row_left = ((window_width - hand_length(gs, n)) / 2.F);
-	const float column_top = ((window_height - hand_length(gs, n)) / 2.F);
-	struct card_placement placement = {.rect = {.x = row_left + offset,
-						    .w = gs->card_size.x,
-						    .h = gs->card_size.y}};
-	switch (id) {
-	case USER:
-		placement.rect.y =
-		    window_height - gs->card_size.y - outer_margin;
-		break;
-	case TOP_BOT:
-		placement.rect.y = outer_margin;
-		break;
-	case LEFT_BOT:
-		placement = turned_card(gs, outer_margin, column_top + offset,
-					LEFT_BOT_CARD_ANGLE);
-		break;
-	case RIGHT_BOT:
-	default:
-		placement = turned_card(
-		    gs, window_width - gs->card_size.y - outer_margin,
-		    column_top + offset, RIGHT_BOT_CARD_ANGLE);
-		break;
-	}
-	return placement;
-}
-
 static SDL_FRect deck_rect(const struct app_state *as) {
-	const struct setimig_state *gs = as->setimig;
-	const float gap = PILE_GAP * gs->card_size.x;
-	return (SDL_FRect){
-	    .x = ((float)as->window_size.x - (2.F * gs->card_size.x) - gap) /
-		 2.F,
-	    .y = ((float)as->window_size.y - gs->card_size.y) / 2.F,
-	    .w = gs->card_size.x,
-	    .h = gs->card_size.y};
+	return pile_rect(as, as->setimig->card_size, LEFT_PILE);
 }
 
 static SDL_FRect discard_rect(const struct app_state *as) {
-	const struct setimig_state *gs = as->setimig;
-	SDL_FRect rect = deck_rect(as);
-	rect.x += gs->card_size.x + (PILE_GAP * gs->card_size.x);
-	return rect;
-}
-
-struct discard_spread {
-	SDL_FPoint first;
-	SDL_FPoint step;
-	unsigned per_row;
-};
-
-/* Lays the discard pile out in rows of overlapping cards, centered in the
- * window. Rows overlap vertically too when the window is too short to fit
- * them apart. */
-static struct discard_spread spread_discard(const struct app_state *as) {
-	const struct setimig_state *gs = as->setimig;
-	const float window_width = (float)as->window_size.x;
-	const float window_height = (float)as->window_size.y;
-	const unsigned num_cards = gs->discard.num_cards;
-	struct discard_spread spread = {
-	    .step = {CARD_SHOW_MARGIN * gs->card_size.x,
-		     gs->card_size.y * (1.F + DISCARD_ROW_GAP)}};
-	const float row_room =
-	    (DISCARD_SPREAD_WIDTH_FRACTION * window_width) - gs->card_size.x;
-	spread.per_row =
-	    (unsigned)SDL_max(1.F, 1.F + (row_room / spread.step.x));
-	const unsigned num_rows =
-	    SDL_max(1U, (num_cards + spread.per_row - 1) / spread.per_row);
-	const unsigned row_cards = SDL_min(num_cards, spread.per_row);
-	if (num_rows > 1) {
-		spread.step.y =
-		    SDL_min(spread.step.y, (window_height - gs->card_size.y) /
-					       (float)(num_rows - 1));
-	}
-	spread.first.x = (window_width - hand_length(gs, row_cards)) / 2.F;
-	spread.first.y = (window_height - gs->card_size.y -
-			  ((float)(num_rows - 1) * spread.step.y)) /
-			 2.F;
-	return spread;
-}
-
-static card_t shown_side(const struct app_state *as, enum player_id id,
-			 card_t card) {
-	return id == USER || as->setimig->revealed ? card : CARD_BACK;
-}
-
-static void draw_card(struct app_state *as, card_t card,
-		      const struct card_placement *placement) {
-	card_texture_draw_rotated(as->card_texture, card, &placement->rect,
-				  placement->angle);
+	return pile_rect(as, as->setimig->card_size, RIGHT_PILE);
 }
 
 #define MAX_HALF_POINTS 15U
@@ -563,14 +397,9 @@ static void draw_turn(struct app_state *as) {
 	++player->num_cards;
 	player->num_receiving = 1;
 	const SDL_FRect start = deck_rect(as);
-	const SDL_FRect end =
-	    hand_card(as, gs->current_player, player->num_cards - 1,
-		      player->num_cards)
-		.rect;
-	gs->flying.player = gs->current_player;
-	card_motion_start(&gs->flying.motion, (SDL_FPoint){start.x, start.y},
-			  0.0, (SDL_FPoint){end.x, end.y}, gs->card_size.x,
-			  CARD_FLIGHT_MS);
+	start_flight_to_hand(as, gs->card_size, &gs->flying, gs->current_player,
+			     player->num_cards, (SDL_FPoint){start.x, start.y},
+			     0.0, CARD_FLIGHT_MS);
 	end_turn(gs);
 }
 
@@ -639,8 +468,18 @@ static void options_mouse_down(struct app_state *appstate,
 	}
 }
 
-static bool play_mouse_down(struct setimig_state *gs, const SDL_Event *event) {
+static bool is_deck_click(const struct app_state *as, const SDL_Event *event) {
+	const SDL_FRect rect = deck_rect(as);
+	return is_left_click_in(event, &rect);
+}
+
+static bool play_mouse_down(struct app_state *as, const SDL_Event *event) {
+	struct setimig_state *gs = as->setimig;
 	if (user_is_choosing(gs)) {
+		if (is_deck_click(as, event)) {
+			draw_clicked(as);
+			return true;
+		}
 		return button_event(gs->draw_button, event) ||
 		       button_event(gs->pass_button, event);
 	}
@@ -655,31 +494,28 @@ static bool play_mouse_down(struct setimig_state *gs, const SDL_Event *event) {
 
 static bool is_discard_click(const struct app_state *as,
 			     const SDL_Event *event) {
-	const SDL_FPoint p = {event->button.x, event->button.y};
 	const SDL_FRect rect = discard_rect(as);
-	return event->button.button == SDL_BUTTON_LEFT &&
-	       as->setimig->discard.num_cards > 0 &&
-	       SDL_PointInRectFloat(&p, &rect);
+	return as->setimig->discard.num_cards > 0 &&
+	       is_left_click_in(event, &rect);
 }
 
 void setimig_event(struct app_state *appstate, SDL_Event *event) {
 	struct setimig_state *gs = appstate->setimig;
 	struct button *buttons[NUM_BUTTONS];
-	unsigned count;
 	switch (event->type) {
 	case SDL_EVENT_MOUSE_BUTTON_DOWN:
 		if (gs->choosing_options) {
 			options_mouse_down(appstate, event);
 		} else if (gs->showing_discard) {
 			gs->showing_discard = false;
-		} else if (!play_mouse_down(gs, event) &&
+		} else if (!play_mouse_down(appstate, event) &&
 			   is_discard_click(appstate, event)) {
 			gs->showing_discard = true;
 		}
 		break;
 	case SDL_EVENT_MOUSE_BUTTON_UP:
-		count = all_buttons(gs, buttons);
-		for (unsigned i = 0; i < count; ++i) {
+		all_buttons(gs, buttons);
+		for (unsigned i = 0; i < NUM_BUTTONS; ++i) {
 			button_event(buttons[i], event);
 		}
 		break;
@@ -693,7 +529,8 @@ void setimig_event(struct app_state *appstate, SDL_Event *event) {
 		}
 		break;
 	}
-	button_set_enabled(gs->start_button, players_in_input(gs) != 0);
+	button_set_enabled(gs->start_button,
+			   players_in_input(gs->players_input) != 0);
 }
 
 static void setimig_update(struct app_state *as) {
@@ -738,69 +575,13 @@ static void draw_discard(struct app_state *as) {
 			  &dest_rect);
 }
 
-static const SDL_Color discard_backdrop_color = {0, 0, 0, 160};
-
-static SDL_FRect spread_card_rect(const struct app_state *as,
-				  const struct discard_spread *spread,
-				  unsigned i) {
-	const unsigned row = i / spread->per_row;
-	const unsigned column = i % spread->per_row;
-	return (SDL_FRect){.x = spread->first.x +
-				((float)column * spread->step.x),
-			   .y = spread->first.y + ((float)row * spread->step.y),
-			   .w = as->setimig->card_size.x,
-			   .h = as->setimig->card_size.y};
-}
-
-static void draw_discard_spread(struct app_state *as, SDL_FPoint mouse) {
-	const struct discard_data *discard = &as->setimig->discard;
-	const struct discard_spread spread = spread_discard(as);
-	SDL_SetRenderDrawColor(
-	    as->renderer, discard_backdrop_color.r, discard_backdrop_color.g,
-	    discard_backdrop_color.b, discard_backdrop_color.a);
-	SDL_RenderFillRect(as->renderer, NULL);
-	for (unsigned i = 0; i < discard->num_cards; ++i) {
-		const SDL_FRect dest_rect = spread_card_rect(as, &spread, i);
-		card_texture_draw(as->card_texture, discard->cards[i],
-				  &dest_rect);
-	}
-	for (unsigned i = discard->num_cards; i-- > 0;) {
-		const SDL_FRect dest_rect = spread_card_rect(as, &spread, i);
-		if (SDL_PointInRectFloat(&mouse, &dest_rect)) {
-			card_texture_draw(as->card_texture, discard->cards[i],
-					  &dest_rect);
-			break;
-		}
-	}
-}
-
-static void draw_hand(struct app_state *as, enum player_id id,
-		      SDL_FPoint mouse) {
+static void draw_player_hand(struct app_state *as, enum player_id id,
+			     SDL_FPoint mouse) {
 	const struct setimig_state *gs = as->setimig;
 	const struct player_data *player = &gs->player[id];
-	const unsigned num_settled = player->num_cards - player->num_receiving;
-	SDL_FRect visible_rect = {.w = CARD_SHOW_MARGIN * gs->card_size.x,
-				  .h = gs->card_size.y};
-	bool draw_hovered = false;
-	card_t hovered_card;
-	struct card_placement hovered_placement;
-	for (unsigned j = 0; j < num_settled; ++j) {
-		const card_t card = shown_side(as, id, player->cards[j]);
-		const struct card_placement placement =
-		    hand_card(as, id, j, player->num_cards);
-		draw_card(as, card, &placement);
-		visible_rect.x = placement.rect.x;
-		visible_rect.y = placement.rect.y;
-		if (id == USER && j < num_settled - 1 &&
-		    SDL_PointInRectFloat(&mouse, &visible_rect)) {
-			draw_hovered = true;
-			hovered_card = card;
-			hovered_placement = placement;
-		}
-	}
-	if (draw_hovered) {
-		draw_card(as, hovered_card, &hovered_placement);
-	}
+	draw_hand(as, gs->card_size, id, player->cards,
+		  player->num_cards - player->num_receiving, player->num_cards,
+		  id == USER || gs->revealed, NO_CARD_INDEX, mouse);
 }
 
 #define STAR_CORNERS 10U
@@ -831,44 +612,32 @@ static void draw_star(struct app_state *as, SDL_FPoint center, float radius) {
 static void draw_wins(struct app_state *as, enum player_id id) {
 	const struct setimig_state *gs = as->setimig;
 	const struct player_data *player = &gs->player[id];
-	const float window_width = (float)as->window_size.x;
-	const float window_height = (float)as->window_size.y;
-	const float outer_margin = OUTER_MARGIN * gs->card_size.y;
 	const float star_size = STAR_SIZE * gs->card_size.x;
 	const float step = star_size * (1.F + STAR_GAP);
-	const float half_hand = player->num_cards == 0
-				    ? 0.F
-				    : hand_length(gs, player->num_cards) / 2.F;
+	const float half_hand =
+	    player->num_cards == 0
+		? 0.F
+		: hand_length(gs->card_size, player->num_cards) / 2.F;
 	const float first =
 	    half_hand + (STAR_GAP * gs->card_size.x) + (star_size / 2.F);
-	SDL_FPoint center;
+	const SDL_FPoint center = seat_center(as, gs->card_size, id);
 	SDL_FPoint direction;
 	SDL_FPoint inward;
 	switch (id) {
 	case USER:
-		center = (SDL_FPoint){window_width / 2.F,
-				      window_height - outer_margin -
-					  (gs->card_size.y / 2.F)};
 		direction = (SDL_FPoint){1.F, 0.F};
 		inward = (SDL_FPoint){0.F, -1.F};
 		break;
 	case TOP_BOT:
-		center = (SDL_FPoint){window_width / 2.F,
-				      outer_margin + (gs->card_size.y / 2.F)};
 		direction = (SDL_FPoint){1.F, 0.F};
 		inward = (SDL_FPoint){0.F, 1.F};
 		break;
 	case LEFT_BOT:
-		center = (SDL_FPoint){outer_margin + (gs->card_size.y / 2.F),
-				      window_height / 2.F};
 		direction = (SDL_FPoint){0.F, 1.F};
 		inward = (SDL_FPoint){1.F, 0.F};
 		break;
 	case RIGHT_BOT:
 	default:
-		center = (SDL_FPoint){window_width - outer_margin -
-					  (gs->card_size.y / 2.F),
-				      window_height / 2.F};
 		direction = (SDL_FPoint){0.F, 1.F};
 		inward = (SDL_FPoint){-1.F, 0.F};
 		break;
@@ -887,44 +656,17 @@ static void draw_wins(struct app_state *as, enum player_id id) {
 	}
 }
 
-static const SDL_Color disabled_button_color = {170, 170, 170, 200};
-
-static void draw_choice_button(struct app_state *as, struct button *button) {
-	SDL_Color color = button_is_pressing(button)
-			      ? green_button_pressed_color
-			      : green_button_color;
-	if (!button_is_enabled(button)) {
-		color = disabled_button_color;
-	}
-	button_draw(as, button, color);
-}
-
 static void draw_flying(struct app_state *as) {
 	const struct setimig_state *gs = as->setimig;
-	const struct card_motion *motion = &gs->flying.motion;
-	if (!card_motion_is_moving(motion)) {
-		return;
-	}
 	const enum player_id id = gs->flying.player;
 	const struct player_data *player = &gs->player[id];
-	const Uint64 now = as->current_frame_ticks;
-	struct card_placement placement =
-	    hand_card(as, id, player->num_cards - 1, player->num_cards);
-	const SDL_FPoint position = card_motion_position(
-	    motion, (SDL_FPoint){placement.rect.x, placement.rect.y}, now);
-	placement.rect.x = position.x;
-	placement.rect.y = position.y;
-	placement.angle = card_motion_angle(motion, placement.angle, now);
-	draw_card(as, shown_side(as, id, player->cards[player->num_cards - 1]),
-		  &placement);
+	draw_flying_card(as, gs->card_size, &gs->flying, player->cards,
+			 player->num_cards, id == USER || gs->revealed);
 }
 
 static const SDL_Color option_color = {235, 235, 235, SDL_ALPHA_OPAQUE};
 static const SDL_Color option_pressed_color = {190, 190, 190, SDL_ALPHA_OPAQUE};
 static const SDL_Color selected_option_color = {250, 215, 90, SDL_ALPHA_OPAQUE};
-static const SDL_Color label_color = {255, 255, 255, 220};
-static const SDL_Color input_color = {255, 255, 255, SDL_ALPHA_OPAQUE};
-static const SDL_Color invalid_input_color = {240, 150, 150, SDL_ALPHA_OPAQUE};
 
 static void draw_option_button(struct app_state *as, struct button *button,
 			       bool selected) {
@@ -939,21 +681,19 @@ static void draw_options(struct app_state *as) {
 	struct setimig_state *gs = as->setimig;
 	label_draw(as, gs->players_caption, NULL);
 	label_draw(as, gs->wins_caption, NULL);
-	input_draw(as, gs->players_input,
-		   players_in_input(gs) != 0 ? input_color
-					     : invalid_input_color);
+	draw_players_input(as, gs->players_input);
 	input_draw(as, gs->wins_input,
 		   gs->wins_limited ? selected_option_color : input_color);
 	draw_option_button(as, gs->no_limit_button, !gs->wins_limited);
-	draw_choice_button(as, gs->start_button);
+	button_draw_choice(as, gs->start_button);
 }
 
 static void draw_game_over(struct app_state *as) {
 	struct setimig_state *gs = as->setimig;
 	label_draw(
 	    as, reached_wins_needed(gs, USER) ? gs->won_label : gs->lost_label,
-	    &label_color);
-	draw_choice_button(as, gs->new_game_button);
+	    &table_label_color);
+	button_draw_choice(as, gs->new_game_button);
 }
 
 void setimig_iterate(struct app_state *appstate) {
@@ -967,22 +707,25 @@ void setimig_iterate(struct app_state *appstate) {
 	draw_deck(appstate);
 	draw_discard(appstate);
 	for (unsigned i = 0; i < NUM_PLAYERS; ++i) {
-		draw_hand(appstate, (enum player_id)i, mouse);
+		draw_player_hand(appstate, (enum player_id)i, mouse);
 		draw_wins(appstate, (enum player_id)i);
 	}
 	draw_flying(appstate);
 	if (user_is_choosing(appstate->setimig)) {
-		draw_choice_button(appstate, appstate->setimig->draw_button);
-		draw_choice_button(appstate, appstate->setimig->pass_button);
+		button_draw_choice(appstate, appstate->setimig->draw_button);
+		button_draw_choice(appstate, appstate->setimig->pass_button);
 	}
 	if (game_is_over(appstate->setimig)) {
 		draw_game_over(appstate);
 	} else if (round_is_over(appstate->setimig)) {
-		draw_choice_button(appstate,
+		button_draw_choice(appstate,
 				   appstate->setimig->next_round_button);
 	}
 	if (appstate->setimig->showing_discard) {
-		draw_discard_spread(appstate, mouse);
+		const struct discard_data *discard =
+		    &appstate->setimig->discard;
+		draw_discard_spread(appstate, appstate->setimig->card_size,
+				    discard->cards, discard->num_cards, mouse);
 	}
 }
 

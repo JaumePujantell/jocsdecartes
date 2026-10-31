@@ -1,6 +1,8 @@
 #ifndef CARDS_H
 #define CARDS_H
 
+#include <stdbool.h>
+
 typedef unsigned char card_t;
 
 #define ORS 0x10U
@@ -17,16 +19,14 @@ typedef unsigned char card_t;
 #define NUM_SUIT_CARDS (NUM_VALUES + NUM_FIGURES)
 
 #define SPANISH_DECK_SIZE (NUM_SUIT_CARDS * NUM_SUITS)
-extern const card_t SPANISH_DECK[SPANISH_DECK_SIZE];
 
 #define SMALL_NUM_VALUES 7U
 #define SMALL_NUM_SUIT_CARDS (SMALL_NUM_VALUES + NUM_FIGURES)
 #define SMALL_SPANISH_DECK_SIZE (SMALL_NUM_SUIT_CARDS * NUM_SUITS)
-extern const card_t SMALL_SPANISH_DECK[SMALL_SPANISH_DECK_SIZE];
 
+void fill_spanish_deck(card_t deck[SPANISH_DECK_SIZE]);
+void fill_small_spanish_deck(card_t deck[SMALL_SPANISH_DECK_SIZE]);
 void shuffle(card_t *set, unsigned n);
-void sort(card_t *set, unsigned n);
-/* 0 -> same suit, 1 -> same suit length, -1 -> different suit length */
-int compare_suit(card_t a, card_t b);
+bool is_short_suit(card_t card);
 
 #endif // !CARDS_H

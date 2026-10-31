@@ -31,6 +31,7 @@ struct button *button_init_icon(SDL_Texture *icon, float w, float h,
 bool button_event(struct button *button, const SDL_Event *event);
 void button_draw(struct app_state *appstate, struct button *button,
 		 SDL_Color color);
+void button_draw_choice(struct app_state *appstate, struct button *button);
 void button_quit(struct button *button);
 
 SDL_FPoint button_get_size(const struct button *button);
@@ -70,9 +71,6 @@ void input_set_size(struct app_state *appstate, struct input *input, float w,
 		    float h);
 void input_set_font_size(struct app_state *appstate, struct input *input,
 			 float font_size);
-SDL_FPoint input_get_size(const struct input *input);
 const char *input_get_text(const struct input *input);
-bool input_is_focused(const struct app_state *appstate,
-		      const struct input *input);
 
 #endif // !GUI_H

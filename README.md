@@ -15,5 +15,5 @@ This project uses [SDL3](https://www.libsdl.org), [SDL3_ttf](https://github.com/
 The Android project under `android-project/` is based on the android-project template that ships with SDL3. The following files come from that template:
 
 - `android-project/app/src/main/java/org/libsdl/app/*.java`: copied unchanged from the SDL3 source tree.
-- `android-project/build.gradle`, `android-project/settings.gradle`, `android-project/gradle.properties`, `android-project/gradlew`, `android-project/gradlew.bat`, and `android-project/app/src/main/res/`: copied unchanged from the SDL3 source tree.
-- `android-project/app/build.gradle`, `android-project/app/proguard-rules.pro`, and `android-project/app/src/main/AndroidManifest.xml`: copied from the SDL3 source tree and modified for this project.
+- `android-project/build.gradle`, `android-project/settings.gradle`, `android-project/gradle.properties`, `android-project/gradlew`, and `android-project/gradlew.bat`: copied unchanged from the SDL3 source tree.
+- `android-project/app/build.gradle`, `android-project/app/proguard-rules.pro`, `android-project/app/src/main/AndroidManifest.xml`, and `android-project/app/src/main/res/`: copied from the SDL3 source tree and modified for this project.

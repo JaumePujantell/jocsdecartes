@@ -23,6 +23,7 @@
 
 #include "card_texture.h"
 #include "gui.h"
+#include "mona.h"
 #include "setimig.h"
 #include "solitari.h"
 
@@ -34,14 +35,22 @@
 #endif
 
 static const char *app_name = "Jocs de Cartes";
-static const char *game_names[NUM_GAMES] = {"El Solitari", "El Set i mig"};
+static const char *game_names[NUM_GAMES] = {"El Solitari", "El Set i mig",
+					    "La Mona"};
 
 #define WINDOW_WIDTH 640
 #define WINDOW_HEIGHT 480
 #define MIN_WINDOW_WIDTH 320
 #define MIN_WINDOW_HEIGHT 240
-#define GAME_BUTTON_WIDTH 200.F
-#define GAME_BUTTON_SPACING 10.F
+
+#ifdef __ANDROID__
+#define WINDOW_FLAGS (SDL_WINDOW_RESIZABLE | SDL_WINDOW_FULLSCREEN)
+#else
+#define WINDOW_FLAGS SDL_WINDOW_RESIZABLE
+#endif
+#define GAME_BUTTON_WIDTH_FRACTION 0.4F
+#define GAME_BUTTONS_HEIGHT_FRACTION 0.7F
+#define GAME_BUTTON_SPACING_FRACTION 0.25F
 
 static const SDL_Color background_color = {255, 255, 255, SDL_ALPHA_OPAQUE};
 
@@ -80,39 +89,70 @@ SDL_Texture *load_texture(SDL_Renderer *renderer, const char *file_name) {
 	return texture;
 }
 
+float window_pixel_density(const struct app_state *as) {
+	const float density = SDL_GetWindowPixelDensity(as->window);
+	return density > 0.F ? density : 1.F;
+}
+
 static void update_render_scale(struct app_state *as) {
-	float density = SDL_GetWindowPixelDensity(as->window);
-	if (density <= 0.F) {
-		density = 1.F;
-	}
+	const float density = window_pixel_density(as);
 	SDL_SetRenderScale(as->renderer, density, density);
 }
 
-static void position_game_buttons(struct app_state *as) {
-	float total_height = -GAME_BUTTON_SPACING;
-	struct main_screen_state *ms = as->main_screen;
-	for (unsigned i = 0; i < NUM_GAMES; ++i) {
-		total_height += button_get_size(ms->game_buttons[i]).y +
-				GAME_BUTTON_SPACING;
-	}
+static float game_button_spacing(const struct main_screen_state *ms) {
+	return button_get_size(ms->game_buttons[0]).y *
+	       GAME_BUTTON_SPACING_FRACTION;
+}
 
-	float y = ((float)as->window_size.y - total_height) / 2.F;
+static float game_buttons_height(const struct main_screen_state *ms) {
+	const float spacing = game_button_spacing(ms);
+	float total_height = -spacing;
+	for (unsigned i = 0; i < NUM_GAMES; ++i) {
+		total_height +=
+		    button_get_size(ms->game_buttons[i]).y + spacing;
+	}
+	return total_height;
+}
+
+static void fit_game_buttons(struct app_state *as) {
+	struct main_screen_state *ms = as->main_screen;
+	const float width =
+	    (float)as->window_size.x * GAME_BUTTON_WIDTH_FRACTION;
+	button_group_fit_width(ms->game_buttons, NUM_GAMES, width);
+
+	const float max_height =
+	    (float)as->window_size.y * GAME_BUTTONS_HEIGHT_FRACTION;
+	const float height = game_buttons_height(ms);
+	if (height > max_height) {
+		button_group_fit_width(ms->game_buttons, NUM_GAMES,
+				       width * max_height / height);
+	}
+}
+
+static void layout_game_buttons(struct app_state *as) {
+	fit_game_buttons(as);
+
+	struct main_screen_state *ms = as->main_screen;
+	const float spacing = game_button_spacing(ms);
+	float y = ((float)as->window_size.y - game_buttons_height(ms)) / 2.F;
 	for (unsigned i = 0; i < NUM_GAMES; ++i) {
 		SDL_FPoint size = button_get_size(ms->game_buttons[i]);
 		button_set_position(ms->game_buttons[i],
 				    ((float)as->window_size.x - size.x) / 2.F,
 				    y);
-		y += size.y + GAME_BUTTON_SPACING;
+		y += size.y + spacing;
 	}
 }
 
 void select_game(struct app_state *as, enum game_id id) {
 	if (as->current_game == SET_I_MIG) {
 		setimig_leave(as);
+	} else if (as->current_game == LA_MONA) {
+		mona_leave(as);
 	}
 	switch (id) {
 	case NO_GAME:
-		position_game_buttons(as);
+		layout_game_buttons(as);
 		break;
 	case SOLITARI:
 		if (!as->solitari) {
@@ -138,8 +178,33 @@ void select_game(struct app_state *as, enum game_id id) {
 			setimig_choose_options(as->setimig);
 		}
 		break;
-	};
+	case LA_MONA:
+		if (!as->mona) {
+			if (!mona_init(as)) {
+				SDL_Log("Failed to start La Mona: %s",
+					SDL_GetError());
+				return;
+			}
+		} else {
+			mona_resize(as);
+			mona_choose_options(as->mona);
+		}
+		break;
+	}
 	as->current_game = id;
+}
+
+bool current_game_can_restart(const struct app_state *as) {
+	switch (as->current_game) {
+	case SOLITARI:
+		return true;
+	case SET_I_MIG:
+		return !setimig_is_choosing_options(as->setimig);
+	case LA_MONA:
+		return !mona_is_choosing_options(as->mona);
+	default:
+		return false;
+	}
 }
 
 void restart_current_game(struct app_state *as) {
@@ -152,7 +217,10 @@ void restart_current_game(struct app_state *as) {
 	case SET_I_MIG:
 		setimig_restart(as->setimig);
 		break;
-	};
+	case LA_MONA:
+		mona_restart(as->mona);
+		break;
+	}
 }
 
 static struct game_button_context {
@@ -171,12 +239,11 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
 	(void)argv;
 	SDL_SetAppMetadata(app_name, "0.3", NULL);
 
-	struct app_state *as = SDL_malloc(sizeof(*as));
+	struct app_state *as = SDL_calloc(1, sizeof(*as));
 	if (!as) {
 		return SDL_APP_FAILURE;
 	}
 	*appstate = as;
-	SDL_memset(as, 0, sizeof(*as));
 	as->current_game = NO_GAME;
 
 	/* Only affects Android/iOS. */
@@ -187,7 +254,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
 	}
 
 	as->window = SDL_CreateWindow(app_name, WINDOW_WIDTH, WINDOW_HEIGHT,
-				      SDL_WINDOW_RESIZABLE);
+				      WINDOW_FLAGS);
 	if (!as->window) {
 		return SDL_APP_FAILURE;
 	}
@@ -216,12 +283,11 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
 		return SDL_APP_FAILURE;
 	}
 
-	struct main_screen_state *ms = SDL_malloc(sizeof(*ms));
+	struct main_screen_state *ms = SDL_calloc(1, sizeof(*ms));
 	if (!ms) {
 		return SDL_APP_FAILURE;
 	}
 	as->main_screen = ms;
-	SDL_memset(ms, 0, sizeof(*ms));
 
 	for (unsigned i = 0; i < NUM_GAMES; ++i) {
 		button_contexts[i].as = as;
@@ -233,8 +299,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
 			return SDL_APP_FAILURE;
 		}
 	}
-	button_group_fit_width(ms->game_buttons, NUM_GAMES, GAME_BUTTON_WIDTH);
-	position_game_buttons(as);
+	layout_game_buttons(as);
 
 	as->current_frame_ticks = SDL_GetTicks();
 
@@ -248,7 +313,7 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
 		as->window_size.x = event->window.data1;
 		as->window_size.y = event->window.data2;
 		if (as->current_game == NO_GAME) {
-			position_game_buttons(as);
+			layout_game_buttons(as);
 		}
 		break;
 	case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
@@ -275,6 +340,9 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
 	case SET_I_MIG:
 		setimig_event(as, event);
 		break;
+	case LA_MONA:
+		mona_event(as, event);
+		break;
 	}
 	return SDL_APP_CONTINUE;
 }
@@ -293,7 +361,6 @@ static void draw_background(struct app_state *as) {
 
 SDL_AppResult SDL_AppIterate(void *appstate) {
 	struct app_state *as = (struct app_state *)appstate;
-	as->last_frame_ticks = as->current_frame_ticks;
 	as->current_frame_ticks = SDL_GetTicks();
 
 	draw_background(as);
@@ -313,6 +380,9 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
 		break;
 	case SET_I_MIG:
 		setimig_iterate(as);
+		break;
+	case LA_MONA:
+		mona_iterate(as);
 		break;
 	}
 
@@ -343,6 +413,9 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result) {
 	}
 	if (as->setimig) {
 		setimig_quit(as);
+	}
+	if (as->mona) {
+		mona_quit(as);
 	}
 	if (as->gui) {
 		gui_quit(as->gui);

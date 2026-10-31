@@ -2,12 +2,29 @@
 
 #include <SDL3/SDL_stdinc.h>
 
-// Aproximation of C23 unreachable
-#ifdef _MSC_VER // MSVC
-#define unreachable() (__assume(0))
-#else // __GNUC__ // GCC, Clang, ICC
-#define unreachable() (__builtin_unreachable())
-#endif
+#include <stdbool.h>
+
+static const card_t suits[NUM_SUITS] = {ORS, COPES, ESPASES, BASTOS};
+
+void fill_spanish_deck(card_t deck[SPANISH_DECK_SIZE]) {
+	unsigned n = 0;
+	for (unsigned i = 0; i < NUM_SUITS; ++i) {
+		for (unsigned value = 1; value <= NUM_SUIT_CARDS; ++value) {
+			deck[n++] = (card_t)(suits[i] + value);
+		}
+	}
+}
+
+void fill_small_spanish_deck(card_t deck[SMALL_SPANISH_DECK_SIZE]) {
+	unsigned n = 0;
+	for (unsigned i = 0; i < NUM_SUITS; ++i) {
+		for (unsigned value = 1; value <= NUM_SUIT_CARDS; ++value) {
+			if (value <= SMALL_NUM_VALUES || value > NUM_VALUES) {
+				deck[n++] = (card_t)(suits[i] + value);
+			}
+		}
+	}
+}
 
 static void swap(card_t *set, unsigned i, unsigned j) {
 	if (j != i) {
@@ -24,45 +41,7 @@ void shuffle(card_t *set, unsigned n) {
 	}
 }
 
-static unsigned higest_index(const card_t *set, unsigned size) {
-	unsigned i;
-	unsigned res = 0;
-	for (i = 1; i < size; ++i) {
-		if (set[i] > set[res]) {
-			res = i;
-		}
-	}
-	return res;
-}
-
-void sort(card_t *set, unsigned n) {
-	unsigned i;
-	for (i = 0; i < n; ++i) {
-		unsigned j = higest_index(set, n - i);
-		swap(set, n - i - 1, j);
-	}
-}
-
-int compare_suit(card_t a, card_t b) {
-	a = a & SUIT_MASK;
-	b = b & SUIT_MASK;
-	if (a == b) {
-		return 0;
-	}
-	switch (a) {
-	case ORS:
-	case COPES:
-		if (b < ESPASES) {
-			return 1;
-		}
-		return -1;
-	case ESPASES:
-	case BASTOS:
-		if (b < ESPASES) {
-			return -1;
-		}
-		return 1;
-	default:
-		unreachable();
-	}
+bool is_short_suit(card_t card) {
+	const unsigned suit = card & SUIT_MASK;
+	return suit == ORS || suit == COPES;
 }

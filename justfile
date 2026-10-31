@@ -47,14 +47,14 @@ clean-android:
 
 # Format project files in-place
 format:
-    clang-format -i src/*.c src/*.h tools/*.c
+    clang-format -i src/*.c src/*.h
 
 # Run clang-tidy on the project files
 tidy:
     [ -f build/compile_commands.json ] || cmake --preset default
-    clang-tidy -p build src/*.c src/*.h tools/*.c
+    clang-tidy -p build src/*.c src/*.h
 
 # Apply the clang-tidy fixes to the project files
 tidy-fix:
     [ -f build/compile_commands.json ] || cmake --preset default
-    clang-tidy -p build --fix --fix-errors src/*.c src/*.h tools/*.c
+    clang-tidy -p build --fix --fix-errors src/*.c src/*.h
