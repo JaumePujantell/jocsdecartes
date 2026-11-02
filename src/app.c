@@ -27,6 +27,7 @@
 #include "setimig.h"
 #include "siset.h"
 #include "solitari.h"
+#include "tuti.h"
 
 #if (defined(WIN32) || defined(_WIN32) || defined(__WIN32)) &&                 \
     !defined(__CYGWIN__)
@@ -37,10 +38,7 @@
 
 static const char *app_name = "Jocs de Cartes";
 static const char *game_names[NUM_GAMES] = {
-    "El Solitari",
-    "El Set i mig",
-    "La Mona",
-    "El Siset",
+    "El Solitari", "El Set i mig", "La Mona", "El Siset", "El Tuti",
 };
 
 #define WINDOW_WIDTH 640
@@ -160,65 +158,64 @@ static void leave_current_game(struct app_state *as) {
 	case EL_SISET:
 		siset_leave(as);
 		break;
+	case EL_TUTI:
+		tuti_leave(as);
+		break;
 	default:
 		break;
 	}
 }
 
-void select_game(struct app_state *as, enum game_id id) {
-	leave_current_game(as);
+static bool enter_game(struct app_state *as, enum game_id id) {
 	switch (id) {
 	case NO_GAME:
 		layout_game_buttons(as);
 		break;
 	case SOLITARI:
 		if (!as->solitari) {
-			if (!solitari_init(as)) {
-				SDL_Log("Failed to start Solitari: %s",
-					SDL_GetError());
-				return;
-			}
-		} else {
-			solitari_resize(as);
-			solitari_restart(as->solitari);
+			return solitari_init(as);
 		}
+		solitari_resize(as);
+		solitari_restart(as->solitari);
 		break;
 	case SET_I_MIG:
 		if (!as->setimig) {
-			if (!setimig_init(as)) {
-				SDL_Log("Failed to start Set i mig: %s",
-					SDL_GetError());
-				return;
-			}
-		} else {
-			setimig_resize(as);
-			setimig_choose_options(as->setimig);
+			return setimig_init(as);
 		}
+		setimig_resize(as);
+		setimig_choose_options(as->setimig);
 		break;
 	case LA_MONA:
 		if (!as->mona) {
-			if (!mona_init(as)) {
-				SDL_Log("Failed to start La Mona: %s",
-					SDL_GetError());
-				return;
-			}
-		} else {
-			mona_resize(as);
-			mona_choose_options(as->mona);
+			return mona_init(as);
 		}
+		mona_resize(as);
+		mona_choose_options(as->mona);
 		break;
 	case EL_SISET:
 		if (!as->siset) {
-			if (!siset_init(as)) {
-				SDL_Log("Failed to start El Siset: %s",
-					SDL_GetError());
-				return;
-			}
-		} else {
-			siset_resize(as);
-			siset_choose_options(as->siset);
+			return siset_init(as);
 		}
+		siset_resize(as);
+		siset_choose_options(as->siset);
 		break;
+	case EL_TUTI:
+		if (!as->tuti) {
+			return tuti_init(as);
+		}
+		tuti_resize(as);
+		tuti_choose_options(as->tuti);
+		break;
+	}
+	return true;
+}
+
+void select_game(struct app_state *as, enum game_id id) {
+	leave_current_game(as);
+	if (!enter_game(as, id)) {
+		SDL_Log("Failed to start %s: %s", game_names[id],
+			SDL_GetError());
+		return;
 	}
 	as->current_game = id;
 }
@@ -233,6 +230,8 @@ bool current_game_can_restart(const struct app_state *as) {
 		return !mona_is_choosing_options(as->mona);
 	case EL_SISET:
 		return !siset_is_choosing_options(as->siset);
+	case EL_TUTI:
+		return !tuti_is_choosing_options(as->tuti);
 	default:
 		return false;
 	}
@@ -253,6 +252,9 @@ void restart_current_game(struct app_state *as) {
 		break;
 	case EL_SISET:
 		siset_restart(as->siset);
+		break;
+	case EL_TUTI:
+		tuti_restart(as->tuti);
 		break;
 	}
 }
@@ -380,6 +382,9 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
 	case EL_SISET:
 		siset_event(as, event);
 		break;
+	case EL_TUTI:
+		tuti_event(as, event);
+		break;
 	}
 	return SDL_APP_CONTINUE;
 }
@@ -426,6 +431,9 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
 	case EL_SISET:
 		siset_iterate(as);
 		break;
+	case EL_TUTI:
+		tuti_iterate(as);
+		break;
 	}
 
 	gui_iterate(as);
@@ -461,6 +469,9 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result) {
 	}
 	if (as->siset) {
 		siset_quit(as);
+	}
+	if (as->tuti) {
+		tuti_quit(as);
 	}
 	if (as->gui) {
 		gui_quit(as->gui);

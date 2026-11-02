@@ -6,8 +6,8 @@
 #include <SDL3/SDL_stdinc.h>
 #include <SDL3/SDL_video.h>
 
-enum game_id { NO_GAME = -1, SOLITARI, SET_I_MIG, LA_MONA, EL_SISET };
-#define NUM_GAMES (EL_SISET + 1)
+enum game_id { NO_GAME = -1, SOLITARI, SET_I_MIG, LA_MONA, EL_SISET, EL_TUTI };
+#define NUM_GAMES (EL_TUTI + 1)
 
 struct app_state {
 	SDL_Window *window;
@@ -23,6 +23,7 @@ struct app_state {
 	struct setimig_state *setimig;
 	struct mona_state *mona;
 	struct siset_state *siset;
+	struct tuti_state *tuti;
 };
 
 bool get_path_to_resource(char **path, const char *kind, const char *name);

@@ -67,12 +67,7 @@ enum player_id next_active_player(unsigned num_players, enum player_id id) {
 }
 
 enum player_id random_active_player(unsigned num_players) {
-	// The user is active in every game, so counting starts from the user.
-	enum player_id id = USER;
-	for (Sint32 skip = SDL_rand((Sint32)num_players); skip > 0; --skip) {
-		id = next_active_player(num_players, id);
-	}
-	return id;
+	return next_active_player(num_players, SDL_rand(num_players));
 }
 
 bool is_left_click_in(const SDL_Event *event, const SDL_FRect *rect) {
